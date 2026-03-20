@@ -17,6 +17,7 @@ public class EventSavedData {
     private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("eventmanager.json");
 
     public boolean adminAutoJoin = false;
+    public boolean enableLogging = true;
     public String defaultRole = null;
     
     // Holding configuration
@@ -34,9 +35,10 @@ public class EventSavedData {
             return new EventSavedData();
         }
         try (Reader reader = Files.newBufferedReader(CONFIG_PATH)) {
-            return GSON.fromJson(reader, EventSavedData.class);
+            EventSavedData data = GSON.fromJson(reader, EventSavedData.class);
+            return data != null ? data : new EventSavedData();
         } catch (IOException e) {
-            e.printStackTrace();
+            EventManagerMod.logError("Failed to load config from {}", CONFIG_PATH, e);
             return new EventSavedData();
         }
     }
@@ -48,7 +50,7 @@ public class EventSavedData {
                 GSON.toJson(this, writer);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            EventManagerMod.logError("Failed to save config to {}", CONFIG_PATH, e);
         }
     }
 }

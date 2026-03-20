@@ -4,6 +4,7 @@ import com.encdata.eventmanager.queue.HoldingService;
 import com.encdata.eventmanager.role.RoleDefinition;
 import com.encdata.eventmanager.session.EventSessionService;
 import net.fabricmc.fabric.api.event.player.*;
+import net.minecraft.command.DefaultPermissions;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.inventory.Inventory;
 import net.minecraft.entity.player.PlayerEntity;
@@ -73,6 +74,11 @@ public class RuleService {
 
     public static boolean shouldCancel(PlayerEntity player, String ruleName, BlockPos pos) {
         if (!(player instanceof ServerPlayerEntity serverPlayer)) return false;
+
+        // Moderators/operators should retain access to admin controls such as the gamemode switcher.
+        if (serverPlayer.getCommandSource().getPermissions().hasPermission(DefaultPermissions.MODERATORS)) {
+            return false;
+        }
         
         // Holding containment check
         if (HoldingService.isContained(player.getUuid())) return true;

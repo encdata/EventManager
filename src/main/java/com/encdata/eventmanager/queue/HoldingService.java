@@ -2,6 +2,7 @@ package com.encdata.eventmanager.queue;
 
 import com.encdata.eventmanager.EventManagerMod;
 import com.encdata.eventmanager.data.EventSavedData;
+import com.encdata.eventmanager.session.EventSessionService;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
@@ -38,6 +39,11 @@ public class HoldingService {
             Vec3d holdingPos = new Vec3d(data.holdingX, data.holdingY, data.holdingZ);
             
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                boolean inHoldingDimension = player.getEntityWorld().getRegistryKey().getValue().equals(data.holdingDimension);
+                if (inHoldingDimension) {
+                    EventSessionService.reconcilePlayerInHolding(player, data);
+                }
+
                 if (containedPlayers.contains(player.getUuid())) {
                     // Check dimension
                     if (!player.getEntityWorld().getRegistryKey().getValue().equals(data.holdingDimension)) {
@@ -85,7 +91,7 @@ public class HoldingService {
     private static void teleportToHolding(ServerPlayerEntity player, EventSavedData data) {
         ServerWorld world = EventManagerMod.getServerInstance().getWorld(RegistryKey.of(RegistryKeys.WORLD, data.holdingDimension));
         if (world == null) {
-            EventManagerMod.LOGGER.warn("Holding dimension {} is unavailable; falling back to overworld", data.holdingDimension);
+            EventManagerMod.logWarn("Holding dimension {} is unavailable; falling back to overworld", data.holdingDimension);
             world = EventManagerMod.getServerInstance().getOverworld();
         }
         player.teleport(world, data.holdingX, data.holdingY, data.holdingZ, Set.of(), player.getYaw(), player.getPitch(), true);

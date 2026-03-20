@@ -28,19 +28,36 @@ import static net.minecraft.server.command.CommandManager.argument;
 import static net.minecraft.server.command.CommandManager.literal;
 
 public class EventCommand {
+    private static final int IDENTITY_LIST_PREVIEW_LIMIT = 25;
+    private static final int MAX_CHAT_MESSAGE_LENGTH = 30000;
+
     public static void init() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(literal("event")
                 .requires(source -> source.getPermissions().hasPermission(DefaultPermissions.MODERATORS))
                 .then(literal("start").executes(context -> {
-                    EventSessionService.startEvent(context.getSource().getServer().getPlayerManager().getPlayerList());
-                    context.getSource().sendFeedback(() -> Text.literal("Event started! Phase: RUNNING (participants released from holding)"), true);
-                    return 1;
+                    EventManagerMod.setServerInstance(context.getSource().getServer());
+                    try {
+                        EventSessionService.startEvent(context.getSource().getServer().getPlayerManager().getPlayerList());
+                        context.getSource().sendFeedback(() -> Text.literal("Event started! Phase: RUNNING (participants released from holding)"), true);
+                        return 1;
+                    } catch (Exception e) {
+                        EventManagerMod.logError("Failed to start event", e);
+                        context.getSource().sendError(Text.literal("Failed to start event. Check server log for the exact cause."));
+                        return 0;
+                    }
                 }))
                 .then(literal("end").executes(context -> {
-                    EventSessionService.endEvent(context.getSource().getServer().getPlayerManager().getPlayerList());
-                    context.getSource().sendFeedback(() -> Text.literal("Event ended! Phase: CLOSED (containment active)"), true);
-                    return 1;
+                    EventManagerMod.setServerInstance(context.getSource().getServer());
+                    try {
+                        EventSessionService.endEvent(context.getSource().getServer().getPlayerManager().getPlayerList());
+                        context.getSource().sendFeedback(() -> Text.literal("Event ended! Phase: CLOSED (containment active)"), true);
+                        return 1;
+                    } catch (Exception e) {
+                        EventManagerMod.logError("Failed to end event", e);
+                        context.getSource().sendError(Text.literal("Failed to end event. Check server log for the exact cause."));
+                        return 0;
+                    }
                 }))
                 .then(literal("status").executes(context -> {
                     EventSavedData data = EventManagerMod.getInstance().getData();
@@ -67,6 +84,17 @@ public class EventCommand {
                     }
                     return 1;
                 }))
+                .then(literal("reload").executes(context -> {
+                    EventSavedData data = EventManagerMod.getInstance().reloadConfig();
+                    for (ServerPlayerEntity player : context.getSource().getServer().getPlayerManager().getPlayerList()) {
+                        EventSessionService.evaluatePlayer(player, data);
+                    }
+                    EventSessionService.pruneContainmentForCurrentPhase();
+                    context.getSource().sendFeedback(() -> Text.literal(
+                            "Reloaded config. logging=" + data.enableLogging + ", roles=" + data.roles.size() + ", defaultRole=" + data.defaultRole
+                    ), true);
+                    return 1;
+                }))
                 .then(literal("debug")
                     .then(literal("participants").executes(context -> {
                         EventSavedData data = EventManagerMod.getInstance().getData();
@@ -88,7 +116,7 @@ public class EventCommand {
                               .append(" contained=").append(contained)
                               .append("\n");
                         }
-                        context.getSource().sendFeedback(() -> Text.literal(sb.toString()), false);
+                        sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     }))
                     .then(literal("contained").executes(context -> {
@@ -111,7 +139,7 @@ public class EventCommand {
                               .append(" reason=").append(describeContainmentReason(uuid, roleName, isParticipant, isBypassListed, roleDef))
                               .append("\n");
                         }
-                        context.getSource().sendFeedback(() -> Text.literal(sb.toString()), false);
+                        sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     }))
                     .then(literal("identity").then(argument("player", EntityArgumentType.player()).executes(context -> {
@@ -132,7 +160,7 @@ public class EventCommand {
                                 .append("profileName=").append(player.getGameProfile().name()).append("\n")
                                 .append("hasTextures=").append(!player.getGameProfile().properties().get("textures").isEmpty());
 
-                        context.getSource().sendFeedback(() -> Text.literal(sb.toString()), false);
+                        sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     })))
                     .then(literal("release").then(argument("player", EntityArgumentType.player()).executes(context -> {
@@ -152,51 +180,76 @@ public class EventCommand {
                               .append(" hasSpawn=").append(role.hasSpawn())
                               .append("\n");
                         }
-                        context.getSource().sendFeedback(() -> Text.literal(sb.toString()), false);
+                        sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     }))
                 )
                 .then(literal("bypass")
                     .then(literal("add").then(argument("player", EntityArgumentType.player()).executes(context -> {
                         ServerPlayerEntity player = EntityArgumentType.getPlayer(context, "player");
-                        EventManagerMod.getInstance().getData().bypassPlayers.add(player.getUuid());
-                        EventSessionService.evaluatePlayer(player, EventManagerMod.getInstance().getData());
+                        EventSavedData data = EventManagerMod.getInstance().getData();
+                        boolean added = data.bypassPlayers.add(player.getUuid());
+                        EventSessionService.evaluatePlayer(player, data);
                         EventManagerMod.getInstance().saveData();
+                        if (!added) {
+                            context.getSource().sendError(Text.literal(player.getName().getString() + " is already in the bypass list."));
+                            return 0;
+                        }
                         context.getSource().sendFeedback(() -> Text.literal("Added " + player.getName().getString() + " to bypass list."), true);
                         return 1;
                     })))
                     .then(literal("remove").then(argument("player", EntityArgumentType.player()).executes(context -> {
                         ServerPlayerEntity player = EntityArgumentType.getPlayer(context, "player");
-                        EventManagerMod.getInstance().getData().bypassPlayers.remove(player.getUuid());
-                        EventSessionService.evaluatePlayer(player, EventManagerMod.getInstance().getData());
+                        EventSavedData data = EventManagerMod.getInstance().getData();
+                        boolean removed = data.bypassPlayers.remove(player.getUuid());
+                        EventSessionService.evaluatePlayer(player, data);
+                        EventSessionService.pruneContainmentForCurrentPhase();
                         EventManagerMod.getInstance().saveData();
-                        context.getSource().sendFeedback(() -> Text.literal("Removed " + player.getName().getString() + " from bypass list."), true);
+                        RoleDefinition role = EventSessionService.getPlayerRole(player.getUuid());
+                        boolean bypassFlow = role != null && role.isBypassEventFlow();
+                        if (!removed) {
+                            context.getSource().sendError(Text.literal(player.getName().getString() + " was not in the bypass list."));
+                            return 0;
+                        }
+                        String message = "Removed " + player.getName().getString() + " from bypass list."
+                                + (bypassFlow ? " They still have a role with bypassEventFlow=true." : "");
+                        context.getSource().sendFeedback(() -> Text.literal(message), true);
                         return 1;
                     })))
                     .then(literal("list").executes(context -> {
-                        context.getSource().sendFeedback(() -> Text.literal("Bypass players: " + EventManagerMod.getInstance().getData().bypassPlayers), false);
+                        sendSafeFeedback(context.getSource(), "Bypass players: " + EventManagerMod.getInstance().getData().bypassPlayers, false);
                         return 1;
                     }))
                 )
                 .then(literal("autojoin")
                     .then(literal("add").then(argument("player", EntityArgumentType.player()).executes(context -> {
                         ServerPlayerEntity player = EntityArgumentType.getPlayer(context, "player");
-                        EventManagerMod.getInstance().getData().autoJoinPlayers.add(player.getUuid());
-                        EventSessionService.evaluatePlayer(player, EventManagerMod.getInstance().getData());
+                        EventSavedData data = EventManagerMod.getInstance().getData();
+                        boolean added = data.autoJoinPlayers.add(player.getUuid());
+                        EventSessionService.evaluatePlayer(player, data);
                         EventManagerMod.getInstance().saveData();
+                        if (!added) {
+                            context.getSource().sendError(Text.literal(player.getName().getString() + " is already in the autojoin list."));
+                            return 0;
+                        }
                         context.getSource().sendFeedback(() -> Text.literal("Added " + player.getName().getString() + " to autojoin list."), true);
                         return 1;
                     })))
                     .then(literal("remove").then(argument("player", EntityArgumentType.player()).executes(context -> {
                         ServerPlayerEntity player = EntityArgumentType.getPlayer(context, "player");
-                        EventManagerMod.getInstance().getData().autoJoinPlayers.remove(player.getUuid());
-                        EventSessionService.evaluatePlayer(player, EventManagerMod.getInstance().getData());
+                        EventSavedData data = EventManagerMod.getInstance().getData();
+                        boolean removed = data.autoJoinPlayers.remove(player.getUuid());
+                        EventSessionService.evaluatePlayer(player, data);
                         EventManagerMod.getInstance().saveData();
+                        if (!removed) {
+                            context.getSource().sendError(Text.literal(player.getName().getString() + " was not in the autojoin list."));
+                            return 0;
+                        }
                         context.getSource().sendFeedback(() -> Text.literal("Removed " + player.getName().getString() + " from autojoin list."), true);
                         return 1;
                     })))
                     .then(literal("list").executes(context -> {
-                        context.getSource().sendFeedback(() -> Text.literal("Autojoin players: " + EventManagerMod.getInstance().getData().autoJoinPlayers), false);
+                        sendSafeFeedback(context.getSource(), "Autojoin players: " + EventManagerMod.getInstance().getData().autoJoinPlayers, false);
                         return 1;
                     }))
                 )
@@ -206,12 +259,19 @@ public class EventCommand {
                         StringBuilder sb = new StringBuilder("Identity pool (").append(identities.size()).append(") from ")
                                 .append(IdentityPoolService.getIdentityPath())
                                 .append(":\n");
-                        for (IdentityDefinition identity : identities) {
+                        int shown = Math.min(IDENTITY_LIST_PREVIEW_LIMIT, identities.size());
+                        for (int i = 0; i < shown; i++) {
+                            IdentityDefinition identity = identities.get(i);
                             sb.append("- ").append(identity.getName())
                               .append(" hasSkin=").append(identity.isValid())
                               .append("\n");
                         }
-                        context.getSource().sendFeedback(() -> Text.literal(sb.toString()), false);
+                        if (identities.size() > shown) {
+                            sb.append("... and ").append(identities.size() - shown)
+                              .append(" more. Check the files in ").append(IdentityPoolService.getIdentityPath())
+                              .append(" for the full list.");
+                        }
+                        sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     }))
                     .then(literal("import").then(argument("url", StringArgumentType.greedyString()).executes(context -> {
@@ -247,6 +307,12 @@ public class EventCommand {
                         return 1;
                     }))
                 )
+                .then(literal("randomize")
+                    .then(argument("player", EntityArgumentType.player()).executes(context -> rerollByRole(context.getSource(), EntityArgumentType.getPlayer(context, "player"))))
+                    .then(argument("player", EntityArgumentType.player()).then(argument("type", StringArgumentType.word()).executes(context ->
+                            rerollByType(context.getSource(), EntityArgumentType.getPlayer(context, "player"), StringArgumentType.getString(context, "type"))
+                    )))
+                )
                 .then(literal("config")
                     .then(literal("adminAutoJoin").then(argument("value", BoolArgumentType.bool()).executes(context -> {
                         boolean value = BoolArgumentType.getBool(context, "value");
@@ -276,7 +342,7 @@ public class EventCommand {
                         return 1;
                     })))
                     .then(literal("list").executes(context -> {
-                        context.getSource().sendFeedback(() -> Text.literal("Roles: " + EventManagerMod.getInstance().getData().roles.keySet()), false);
+                        sendSafeFeedback(context.getSource(), "Roles: " + EventManagerMod.getInstance().getData().roles.keySet(), false);
                         return 1;
                     }))
                     .then(literal("info").then(argument("role", StringArgumentType.word()).executes(context -> {
@@ -308,7 +374,7 @@ public class EventCommand {
                               .append(role.getSpawnZ()).append("\n");
                             sb.append("spawnRotation=").append(role.getSpawnYaw()).append(", ").append(role.getSpawnPitch()).append("\n");
                         }
-                        context.getSource().sendFeedback(() -> Text.literal(sb.toString()), false);
+                        sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     })))
                     .then(literal("assign").then(argument("player", EntityArgumentType.player()).then(argument("role", StringArgumentType.word()).executes(context -> {
@@ -337,6 +403,20 @@ public class EventCommand {
                         context.getSource().sendFeedback(() -> Text.literal(sb.toString()), true);
                         return 1;
                     }))))
+                    .then(literal("applykit").then(argument("role", StringArgumentType.word()).executes(context -> {
+                        String roleName = StringArgumentType.getString(context, "role");
+                        ServerPlayerEntity player = context.getSource().getPlayer();
+                        if (player == null) {
+                            context.getSource().sendError(Text.literal("Only players can use this command."));
+                            return 0;
+                        }
+                        if (!EventSessionService.applyRoleKit(player, roleName)) {
+                            context.getSource().sendError(Text.literal("Role not found: " + roleName));
+                            return 0;
+                        }
+                        context.getSource().sendFeedback(() -> Text.literal("Applied kit from role " + roleName + " to " + player.getName().getString() + "."), true);
+                        return 1;
+                    })))
                     .then(literal("unassign").then(argument("player", EntityArgumentType.player()).executes(context -> {
                         ServerPlayerEntity player = EntityArgumentType.getPlayer(context, "player");
                         EventSessionService.unassignRole(player);
@@ -434,6 +514,71 @@ public class EventCommand {
         return "offline (" + uuid + ")";
     }
 
+    private static int rerollByRole(ServerCommandSource source, ServerPlayerEntity player) {
+        RoleDefinition role = EventSessionService.getPlayerRole(player.getUuid());
+        if (role == null) {
+            source.sendError(Text.literal("Player has no assigned role with randomization settings."));
+            return 0;
+        }
+
+        boolean rerollName = role.isRandomizeName();
+        boolean rerollSkin = role.isRandomizeSkin();
+        if (!rerollName && !rerollSkin) {
+            source.sendError(Text.literal("Role " + role.getName() + " does not allow name or skin randomization."));
+            return 0;
+        }
+
+        if (!IdentityService.rerollIdentity(player, role, rerollName, rerollSkin)) {
+            source.sendError(Text.literal("Failed to reroll identity for " + player.getName().getString() + "."));
+            return 0;
+        }
+
+        source.sendFeedback(() -> Text.literal(
+                "Rerolled " + player.getName().getString() + " using role " + role.getName()
+                        + " (name=" + rerollName + ", skin=" + rerollSkin + ")."
+        ), true);
+        return 1;
+    }
+
+    private static int rerollByType(ServerCommandSource source, ServerPlayerEntity player, String type) {
+        RoleDefinition role = EventSessionService.getPlayerRole(player.getUuid());
+        if (role == null) {
+            source.sendError(Text.literal("Player has no assigned role with randomization settings."));
+            return 0;
+        }
+
+        boolean rerollName;
+        boolean rerollSkin;
+        if ("name".equalsIgnoreCase(type)) {
+            if (!role.isRandomizeName()) {
+                source.sendError(Text.literal("Role " + role.getName() + " does not allow name randomization."));
+                return 0;
+            }
+            rerollName = true;
+            rerollSkin = false;
+        } else if ("skin".equalsIgnoreCase(type)) {
+            if (!role.isRandomizeSkin()) {
+                source.sendError(Text.literal("Role " + role.getName() + " does not allow skin randomization."));
+                return 0;
+            }
+            rerollName = false;
+            rerollSkin = true;
+        } else {
+            source.sendError(Text.literal("Randomize type must be 'name' or 'skin'."));
+            return 0;
+        }
+
+        if (!IdentityService.rerollIdentity(player, role, rerollName, rerollSkin)) {
+            source.sendError(Text.literal("Failed to reroll " + type + " for " + player.getName().getString() + "."));
+            return 0;
+        }
+
+        source.sendFeedback(() -> Text.literal(
+                "Rerolled " + type + " for " + player.getName().getString() + " using role " + role.getName() + "."
+        ), true);
+        return 1;
+    }
+
     private static String describeContainmentReason(UUID uuid, String roleName, boolean isParticipant, boolean isBypassListed, RoleDefinition roleDef) {
         ContainmentReason storedReason = HoldingService.getContainmentReason(uuid);
         if (isBypassListed) {
@@ -467,5 +612,19 @@ public class EventCommand {
                 EventSessionService.evaluatePlayer(player, EventManagerMod.getInstance().getData());
             }
         }
+    }
+
+    private static void sendSafeFeedback(ServerCommandSource source, String message, boolean broadcastToOps) {
+        source.sendFeedback(() -> Text.literal(capMessage(message)), broadcastToOps);
+    }
+
+    private static String capMessage(String message) {
+        if (message == null) {
+            return "";
+        }
+        if (message.length() <= MAX_CHAT_MESSAGE_LENGTH) {
+            return message;
+        }
+        return message.substring(0, MAX_CHAT_MESSAGE_LENGTH) + "\n... output truncated ...";
     }
 }

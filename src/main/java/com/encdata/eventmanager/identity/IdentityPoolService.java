@@ -97,12 +97,12 @@ public final class IdentityPoolService {
             }
 
             if (createdDefault) {
-                EventManagerMod.LOGGER.info("Created default identity pools at {} and {}", NAME_PATH, SKIN_PATH);
+                EventManagerMod.logInfo("Created default identity pools at {} and {}", NAME_PATH, SKIN_PATH);
             }
             if (requestConfig != null && requestConfig.hasOverrides()) {
-                EventManagerMod.LOGGER.info("Loaded NameMC request overrides from {}", REQUEST_PATH);
+                EventManagerMod.logInfo("Loaded NameMC request overrides from {}", REQUEST_PATH);
             }
-            EventManagerMod.LOGGER.info(
+            EventManagerMod.logInfo(
                     "Loaded {} names from {} ({} invalid skipped) and {} skins from {} ({} invalid skipped)",
                     knownNames.size(),
                     NAME_PATH,
@@ -177,7 +177,7 @@ public final class IdentityPoolService {
             }
         }
 
-        EventManagerMod.LOGGER.warn("Failed to import identities from {} via variants {}", url, candidates);
+        EventManagerMod.logWarn("Failed to import identities from {} via variants {}", url, candidates);
         return new ImportResult(false, 0, 0, lastError, null);
     }
 
@@ -274,7 +274,7 @@ public final class IdentityPoolService {
         }
 
         LoadResult result = snapshotLoadResult();
-        EventManagerMod.LOGGER.info(
+        EventManagerMod.logInfo(
                 "Imported NameMC candidates from {}: candidates={}, resolvedSkins={}, addedNames={}, addedSkins={}",
                 url,
                 candidateNames.size(),
@@ -293,17 +293,17 @@ public final class IdentityPoolService {
             int addedNames = 0;
             int addedSkins = 0;
             List<String> sources = buildBackgroundSources();
-            EventManagerMod.LOGGER.info("Background identity refresh started");
+            EventManagerMod.logInfo("Background identity refresh started");
             for (String source : sources) {
                 ImportResult result = importFromUrl(source);
                 if (result.success()) {
                     addedNames += result.importedNameCount();
                     addedSkins += result.importedSkinCount();
                 } else {
-                    EventManagerMod.LOGGER.info("Background identity refresh source {} added nothing: {}", source, result.error());
+                    EventManagerMod.logInfo("Background identity refresh source {} added nothing: {}", source, result.error());
                 }
             }
-            EventManagerMod.LOGGER.info(
+            EventManagerMod.logInfo(
                     "Background identity refresh finished: addedNames={}, addedSkins={}, names={}, skins={}",
                     addedNames,
                     addedSkins,
@@ -311,7 +311,7 @@ public final class IdentityPoolService {
                     snapshotLoadResult().loadedSkinCount()
             );
         } catch (Exception e) {
-            EventManagerMod.LOGGER.warn("Background identity refresh failed", e);
+            EventManagerMod.logWarn("Background identity refresh failed", e);
         }
     }
 
@@ -422,7 +422,7 @@ public final class IdentityPoolService {
                 return skin.isValid() ? skin : null;
             }
         } catch (Exception e) {
-            EventManagerMod.LOGGER.warn("Failed to resolve Mojang skin for {}", name, e);
+            EventManagerMod.logWarn("Failed to resolve Mojang skin for {}", name, e);
         }
         return null;
     }
@@ -499,7 +499,7 @@ public final class IdentityPoolService {
             NamePoolFile file = GSON.fromJson(reader, NamePoolFile.class);
             return file != null ? file : new NamePoolFile();
         } catch (IOException e) {
-            EventManagerMod.LOGGER.error("Failed to read names from {}", NAME_PATH, e);
+            EventManagerMod.logError("Failed to read names from {}", NAME_PATH, e);
             return new NamePoolFile();
         }
     }
@@ -509,7 +509,7 @@ public final class IdentityPoolService {
             SkinPoolFile file = GSON.fromJson(reader, SkinPoolFile.class);
             return file != null ? file : new SkinPoolFile();
         } catch (IOException e) {
-            EventManagerMod.LOGGER.error("Failed to read skins from {}", SKIN_PATH, e);
+            EventManagerMod.logError("Failed to read skins from {}", SKIN_PATH, e);
             return new SkinPoolFile();
         }
     }
@@ -522,7 +522,7 @@ public final class IdentityPoolService {
             NameMcRequestConfig config = GSON.fromJson(reader, NameMcRequestConfig.class);
             return config != null ? config : NameMcRequestConfig.template();
         } catch (IOException e) {
-            EventManagerMod.LOGGER.error("Failed to read NameMC request config from {}", REQUEST_PATH, e);
+            EventManagerMod.logError("Failed to read NameMC request config from {}", REQUEST_PATH, e);
             return NameMcRequestConfig.template();
         }
     }
@@ -542,7 +542,7 @@ public final class IdentityPoolService {
                 GSON.toJson(file, writer);
             }
         } catch (IOException e) {
-            EventManagerMod.LOGGER.error("Failed to write names to {}", NAME_PATH, e);
+            EventManagerMod.logError("Failed to write names to {}", NAME_PATH, e);
         }
     }
 
@@ -553,7 +553,7 @@ public final class IdentityPoolService {
                 GSON.toJson(file, writer);
             }
         } catch (IOException e) {
-            EventManagerMod.LOGGER.error("Failed to write skins to {}", SKIN_PATH, e);
+            EventManagerMod.logError("Failed to write skins to {}", SKIN_PATH, e);
         }
     }
 
@@ -564,7 +564,7 @@ public final class IdentityPoolService {
                 GSON.toJson(config, writer);
             }
         } catch (IOException e) {
-            EventManagerMod.LOGGER.error("Failed to write NameMC request config to {}", REQUEST_PATH, e);
+            EventManagerMod.logError("Failed to write NameMC request config to {}", REQUEST_PATH, e);
         }
     }
 

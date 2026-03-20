@@ -3,6 +3,7 @@ package com.encdata.eventmanager.identity;
 import com.encdata.eventmanager.EventManagerMod;
 import com.encdata.eventmanager.mixin.PlayerEntityAccessor;
 import com.encdata.eventmanager.role.RoleDefinition;
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableMultimap;
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
@@ -92,16 +93,53 @@ public final class IdentityService {
         }
 
         GameProfile originalProfile = originalProfiles.get(uuid);
-        if (wantsRandomSkin) {
-            GameProfile desiredProfile = buildAppliedProfile(originalProfile, identity, wantsRandomName);
-            if (!profilesEquivalent(player.getGameProfile(), desiredProfile)) {
-                setPlayerProfile(player, desiredProfile);
-                refreshProfile(player);
-            }
-        } else if (originalProfile != null && !profilesEquivalent(player.getGameProfile(), originalProfile)) {
-            setPlayerProfile(player, cloneProfile(originalProfile));
+        if (originalProfile == null) {
+            return;
+        }
+
+        GameProfile desiredProfile = buildAppliedProfile(originalProfile, identity, wantsRandomName, wantsRandomSkin);
+        if (!profilesEquivalent(player.getGameProfile(), desiredProfile)) {
+            setPlayerProfile(player, desiredProfile);
             refreshProfile(player);
         }
+    }
+
+    public static boolean rerollIdentity(ServerPlayerEntity player, RoleDefinition role, boolean rerollName, boolean rerollSkin) {
+        if (role == null || (!rerollName && !rerollSkin)) {
+            return false;
+        }
+
+        UUID uuid = player.getUuid();
+        SessionIdentity currentIdentity = assignedIdentities.get(uuid);
+        if (currentIdentity == null) {
+            applyIdentity(player, role);
+            return assignedIdentities.containsKey(uuid);
+        }
+
+        String updatedName = currentIdentity.name();
+        String updatedSkinValue = currentIdentity.skinTextureValue();
+        String updatedSkinSignature = currentIdentity.skinSignature();
+
+        if (rerollName) {
+            String nextName = selectName(uuid, currentIdentity.name());
+            if (nextName == null) {
+                return false;
+            }
+            updatedName = nextName;
+        }
+
+        if (rerollSkin) {
+            IdentityPoolService.SkinDefinition nextSkin = selectSkin(uuid, currentIdentity.skinTextureValue(), currentIdentity.skinSignature());
+            if (nextSkin == null) {
+                return false;
+            }
+            updatedSkinValue = nextSkin.skinTextureValue();
+            updatedSkinSignature = nextSkin.skinSignature();
+        }
+
+        assignedIdentities.put(uuid, new SessionIdentity(updatedName, updatedSkinValue, updatedSkinSignature));
+        applyIdentity(player, role);
+        return true;
     }
 
     public static void clearIdentity(ServerPlayerEntity player) {
@@ -114,6 +152,14 @@ public final class IdentityService {
             setPlayerProfile(player, cloneProfile(originalProfile));
             refreshProfile(player);
         }
+    }
+
+    public static void resetIdentity(ServerPlayerEntity player) {
+        UUID uuid = player.getUuid();
+        clearIdentity(player);
+        assignedIdentities.remove(uuid);
+        originalIdentities.remove(uuid);
+        originalProfiles.remove(uuid);
     }
 
     public static void clearSession() {
@@ -132,32 +178,70 @@ public final class IdentityService {
     }
 
     private static SessionIdentity selectIdentity(UUID playerUuid) {
-        List<String> names = IdentityPoolService.getNames();
-        List<IdentityPoolService.SkinDefinition> skins = IdentityPoolService.getSkins();
-        if (names.isEmpty() || skins.isEmpty()) {
-            EventManagerMod.LOGGER.warn(
+        String chosenName = selectName(playerUuid, null);
+        IdentityPoolService.SkinDefinition chosenSkin = selectSkin(playerUuid, null, null);
+        if (chosenName == null || chosenSkin == null) {
+            EventManagerMod.logWarn(
                     "Identity randomization requested for {} but the identity pool is incomplete: names={}, skins={}",
                     playerUuid,
-                    names.size(),
-                    skins.size()
+                    IdentityPoolService.getNames().size(),
+                    IdentityPoolService.getSkins().size()
             );
+            return null;
+        }
+        return new SessionIdentity(chosenName, chosenSkin.skinTextureValue(), chosenSkin.skinSignature());
+    }
+
+    private static String selectName(UUID playerUuid, String currentName) {
+        List<String> names = IdentityPoolService.getNames();
+        if (names.isEmpty()) {
             return null;
         }
 
         List<String> preferredNames = names.stream()
-                .filter(name -> assignedIdentities.values().stream().noneMatch(assigned -> assigned.name().equals(name)))
-                .toList();
-        List<IdentityPoolService.SkinDefinition> preferredSkins = skins.stream()
-                .filter(skin -> assignedIdentities.values().stream().noneMatch(assigned ->
-                        Objects.equals(assigned.skinTextureValue(), skin.skinTextureValue())
-                                && Objects.equals(assigned.skinSignature(), skin.skinSignature())))
+                .filter(name -> !Objects.equals(name, currentName))
+                .filter(name -> assignedIdentities.entrySet().stream()
+                        .filter(entry -> !entry.getKey().equals(playerUuid))
+                        .noneMatch(entry -> entry.getValue().name().equals(name)))
                 .toList();
 
-        List<String> candidateNames = preferredNames.isEmpty() ? names : preferredNames;
-        List<IdentityPoolService.SkinDefinition> candidateSkins = preferredSkins.isEmpty() ? skins : preferredSkins;
-        String chosenName = candidateNames.get(RANDOM.nextInt(candidateNames.size()));
-        IdentityPoolService.SkinDefinition chosenSkin = candidateSkins.get(RANDOM.nextInt(candidateSkins.size()));
-        return new SessionIdentity(chosenName, chosenSkin.skinTextureValue(), chosenSkin.skinSignature());
+        List<String> fallbackNames = names.stream()
+                .filter(name -> !Objects.equals(name, currentName))
+                .toList();
+        List<String> candidateNames = preferredNames.isEmpty() ? fallbackNames : preferredNames;
+        if (candidateNames.isEmpty()) {
+            return currentName != null ? currentName : names.get(RANDOM.nextInt(names.size()));
+        }
+        return candidateNames.get(RANDOM.nextInt(candidateNames.size()));
+    }
+
+    private static IdentityPoolService.SkinDefinition selectSkin(UUID playerUuid, String currentSkinValue, String currentSkinSignature) {
+        List<IdentityPoolService.SkinDefinition> skins = IdentityPoolService.getSkins();
+        if (skins.isEmpty()) {
+            return null;
+        }
+
+        List<IdentityPoolService.SkinDefinition> preferredSkins = skins.stream()
+                .filter(skin -> !Objects.equals(skin.skinTextureValue(), currentSkinValue)
+                        || !Objects.equals(skin.skinSignature(), currentSkinSignature))
+                .filter(skin -> assignedIdentities.entrySet().stream()
+                        .filter(entry -> !entry.getKey().equals(playerUuid))
+                        .noneMatch(entry -> Objects.equals(entry.getValue().skinTextureValue(), skin.skinTextureValue())
+                                && Objects.equals(entry.getValue().skinSignature(), skin.skinSignature())))
+                .toList();
+
+        List<IdentityPoolService.SkinDefinition> fallbackSkins = skins.stream()
+                .filter(skin -> !Objects.equals(skin.skinTextureValue(), currentSkinValue)
+                        || !Objects.equals(skin.skinSignature(), currentSkinSignature))
+                .toList();
+
+        List<IdentityPoolService.SkinDefinition> candidateSkins = preferredSkins.isEmpty() ? fallbackSkins : preferredSkins;
+        if (candidateSkins.isEmpty()) {
+            return currentSkinValue != null && currentSkinSignature != null
+                    ? new IdentityPoolService.SkinDefinition(currentSkinValue, currentSkinSignature)
+                    : skins.get(RANDOM.nextInt(skins.size()));
+        }
+        return candidateSkins.get(RANDOM.nextInt(candidateSkins.size()));
     }
 
     private static void restoreNameOnly(ServerPlayerEntity player) {
@@ -173,17 +257,32 @@ public final class IdentityService {
         randomizedNames.remove(uuid);
     }
 
-    private static GameProfile buildAppliedProfile(GameProfile originalProfile, SessionIdentity identity, boolean useIdentityName) {
+    private static GameProfile buildAppliedProfile(GameProfile originalProfile, SessionIdentity identity, boolean useIdentityName, boolean useIdentitySkin) {
         String profileName = useIdentityName ? identity.name() : originalProfile.name();
-        PropertyMap properties = new PropertyMap(ImmutableMultimap.of(
-                "textures",
-                new Property("textures", identity.skinTextureValue(), identity.skinSignature())
-        ));
+        PropertyMap properties;
+        if (useIdentitySkin) {
+            properties = new PropertyMap(ImmutableMultimap.of(
+                    "textures",
+                    new Property("textures", identity.skinTextureValue(), identity.skinSignature())
+            ));
+        } else {
+            properties = copyProperties(originalProfile.properties());
+        }
         return new GameProfile(originalProfile.id(), profileName, properties);
     }
 
     private static GameProfile cloneProfile(GameProfile source) {
-        return new GameProfile(source.id(), source.name(), source.properties());
+        return new GameProfile(source.id(), source.name(), copyProperties(source.properties()));
+    }
+
+    private static PropertyMap copyProperties(PropertyMap source) {
+        ArrayListMultimap<String, Property> copy = ArrayListMultimap.create();
+        for (String key : source.keySet()) {
+            for (Property property : source.get(key)) {
+                copy.put(key, new Property(property.name(), property.value(), property.signature()));
+            }
+        }
+        return new PropertyMap(copy);
     }
 
     private static boolean profilesEquivalent(GameProfile left, GameProfile right) {

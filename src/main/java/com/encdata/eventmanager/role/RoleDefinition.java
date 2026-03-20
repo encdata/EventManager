@@ -1,7 +1,14 @@
 package com.encdata.eventmanager.role;
 
+import com.encdata.eventmanager.EventManagerMod;
 import com.google.gson.JsonElement;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.serialization.JsonOps;
+import net.minecraft.nbt.NbtElement;
+import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.StringNbtReader;
+import net.minecraft.registry.DynamicRegistryManager;
+import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.registry.Registries;
@@ -106,8 +113,20 @@ public class RoleDefinition {
             return ItemStack.EMPTY;
         }
 
+        if (entry.stackNbt != null && !entry.stackNbt.isBlank()) {
+            try {
+                NbtElement nbt = StringNbtReader.readCompound(entry.stackNbt);
+                var parsed = ItemStack.CODEC.parse(getRegistryLookup().getOps(NbtOps.INSTANCE), nbt);
+                if (parsed.result().isPresent()) {
+                    return parsed.result().get();
+                }
+            } catch (CommandSyntaxException ignored) {
+                EventManagerMod.logWarn("Failed to parse kit stack NBT for slot {}", entry.slot);
+            }
+        }
+
         if (entry.stackData != null) {
-            var parsed = ItemStack.CODEC.parse(JsonOps.INSTANCE, entry.stackData);
+            var parsed = ItemStack.CODEC.parse(getRegistryLookup().getOps(JsonOps.INSTANCE), entry.stackData);
             if (parsed.result().isPresent()) {
                 return parsed.result().get();
             }
@@ -130,23 +149,31 @@ public class RoleDefinition {
         private int slot;
         private String itemId;
         private int count;
+        private String stackNbt;
         private JsonElement stackData;
 
         private KitEntry() {
         }
 
-        private KitEntry(int slot, String itemId, int count, JsonElement stackData) {
+        private KitEntry(int slot, String itemId, int count, String stackNbt, JsonElement stackData) {
             this.slot = slot;
             this.itemId = itemId;
             this.count = count;
+            this.stackNbt = stackNbt;
             this.stackData = stackData;
         }
 
         public static KitEntry of(int slot, ItemStack stack) {
-            JsonElement stackData = ItemStack.CODEC.encodeStart(JsonOps.INSTANCE, stack.copy())
+            NbtElement stackNbt = ItemStack.CODEC.encodeStart(getRegistryLookup().getOps(NbtOps.INSTANCE), stack.copy())
                     .result()
                     .orElse(null);
-            return new KitEntry(slot, Registries.ITEM.getId(stack.getItem()).toString(), stack.getCount(), stackData);
+            return new KitEntry(
+                    slot,
+                    Registries.ITEM.getId(stack.getItem()).toString(),
+                    stack.getCount(),
+                    stackNbt != null ? stackNbt.toString() : null,
+                    null
+            );
         }
 
         public int slot() {
@@ -164,5 +191,12 @@ public class RoleDefinition {
         public JsonElement stackData() {
             return stackData;
         }
+    }
+
+    private static RegistryWrapper.WrapperLookup getRegistryLookup() {
+        if (EventManagerMod.getServerInstance() != null) {
+            return EventManagerMod.getServerInstance().getRegistryManager();
+        }
+        return DynamicRegistryManager.EMPTY;
     }
 }

@@ -20,6 +20,7 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.world.Heightmap;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -62,8 +63,12 @@ public class EventSessionService {
         EventSavedData data = EventManagerMod.getInstance().getData();
         appliedKitRoles.clear();
 
-        for (ServerPlayerEntity player : players) {
-            evaluatePlayer(player, data);
+        for (ServerPlayerEntity player : List.copyOf(players)) {
+            try {
+                evaluatePlayer(player, data);
+            } catch (Exception e) {
+                EventManagerMod.logError("Failed to apply RUNNING state for {}", player.getName().getString(), e);
+            }
         }
 
         pruneContainmentForCurrentPhase();
@@ -72,9 +77,14 @@ public class EventSessionService {
     public static void endEvent(Collection<ServerPlayerEntity> players) {
         currentPhase = Phase.ENDING;
 
-        HoldingService.clear(players);
-        for (ServerPlayerEntity player : players) {
-            IdentityService.clearIdentity(player);
+        List<ServerPlayerEntity> playerSnapshot = List.copyOf(players);
+        HoldingService.clear(playerSnapshot);
+        for (ServerPlayerEntity player : playerSnapshot) {
+            try {
+                IdentityService.resetIdentity(player);
+            } catch (Exception e) {
+                EventManagerMod.logError("Failed to reset identity for {}", player.getName().getString(), e);
+            }
         }
         IdentityService.clearSession();
         participantRoles.clear();
@@ -83,8 +93,12 @@ public class EventSessionService {
         currentPhase = Phase.CLOSED;
 
         EventSavedData data = EventManagerMod.getInstance().getData();
-        for (ServerPlayerEntity player : players) {
-            evaluatePlayer(player, data);
+        for (ServerPlayerEntity player : playerSnapshot) {
+            try {
+                evaluatePlayer(player, data);
+            } catch (Exception e) {
+                EventManagerMod.logError("Failed to apply CLOSED state for {}", player.getName().getString(), e);
+            }
         }
         pruneContainmentForCurrentPhase();
     }
@@ -97,12 +111,12 @@ public class EventSessionService {
         if (data.bypassPlayers.contains(uuid)) {
             HoldingService.removePlayer(player);
             appliedKitRoles.remove(uuid);
-            IdentityService.clearIdentity(player);
+            IdentityService.resetIdentity(player);
             return;
         }
 
         if (!participantRoles.containsKey(uuid)) {
-            assignRole(player, DEFAULT_ROLE_NAME);
+            enrollPlayer(player);
             return;
         }
 
@@ -127,6 +141,7 @@ public class EventSessionService {
             role.ensureDefaults();
             participantRoles.put(player.getUuid(), roleName);
             appliedKitRoles.remove(player.getUuid());
+            IdentityService.resetIdentity(player);
             applyPlayerState(player, data, true);
         }
     }
@@ -134,10 +149,10 @@ public class EventSessionService {
     public static void unassignRole(ServerPlayerEntity player) {
         EventSavedData data = EventManagerMod.getInstance().getData();
         ensureDefaultConfiguration(data);
-        participantRoles.remove(player.getUuid());
+        participantRoles.put(player.getUuid(), "unassigned");
         appliedKitRoles.remove(player.getUuid());
-        IdentityService.clearIdentity(player);
-        evaluatePlayer(player, data);
+        IdentityService.resetIdentity(player);
+        applyPlayerState(player, data, true);
     }
 
     public static boolean isRuntimeParticipant(UUID uuid, EventSavedData data) {
@@ -260,7 +275,7 @@ public class EventSessionService {
         if (data.bypassPlayers.contains(uuid)) {
             HoldingService.removePlayer(player);
             appliedKitRoles.remove(uuid);
-            IdentityService.clearIdentity(player);
+            IdentityService.resetIdentity(player);
             return;
         }
 
@@ -268,7 +283,7 @@ public class EventSessionService {
         if (roleName == null) {
             HoldingService.removePlayer(player);
             appliedKitRoles.remove(uuid);
-            IdentityService.clearIdentity(player);
+            IdentityService.resetIdentity(player);
             return;
         }
 
@@ -284,7 +299,7 @@ public class EventSessionService {
             IdentityService.applyIdentity(player, role);
         } else {
             appliedKitRoles.remove(uuid);
-            IdentityService.clearIdentity(player);
+            IdentityService.resetIdentity(player);
         }
 
         if (role != null && role.isBypassEventFlow()) {
@@ -300,7 +315,7 @@ public class EventSessionService {
                 if (role.hasSpawn()) {
                     teleportToRoleSpawn(player, role);
                 } else if (warnIfMissingSpawn) {
-                    EventManagerMod.LOGGER.warn("Role {} has no spawn configured for player {}", role.getName(), player.getName().getString());
+                    EventManagerMod.logWarn("Role {} has no spawn configured for player {}", role.getName(), player.getName().getString());
                     teleportToSafeWorldSpawn(player);
                     player.sendMessage(Text.literal("Warning: Role " + role.getName() + " has no spawn configured. Teleported to a safe world spawn instead."));
                 }
@@ -325,7 +340,7 @@ public class EventSessionService {
             changed = true;
         }
         role.ensureDefaults();
-        if (!DEFAULT_ROLE_NAME.equals(data.defaultRole)) {
+        if (data.defaultRole == null || !data.roles.containsKey(data.defaultRole)) {
             data.defaultRole = DEFAULT_ROLE_NAME;
             changed = true;
         }
@@ -340,6 +355,63 @@ public class EventSessionService {
     public static void handlePlayerRespawn(ServerPlayerEntity player) {
         appliedKitRoles.remove(player.getUuid());
         evaluatePlayer(player, EventManagerMod.getInstance().getData());
+    }
+
+    public static boolean applyRoleKit(ServerPlayerEntity player, String roleName) {
+        EventSavedData data = EventManagerMod.getInstance().getData();
+        ensureDefaultConfiguration(data);
+        RoleDefinition role = data.roles.get(roleName);
+        if (role == null) {
+            return false;
+        }
+
+        role.ensureDefaults();
+        appliedKitRoles.remove(player.getUuid());
+        applyRoleKitIfNeeded(player, roleName, role);
+        return true;
+    }
+
+    public static void reconcilePlayerInHolding(ServerPlayerEntity player, EventSavedData data) {
+        UUID uuid = player.getUuid();
+
+        if (data.bypassPlayers.contains(uuid)) {
+            HoldingService.removePlayer(player);
+            appliedKitRoles.remove(uuid);
+            IdentityService.resetIdentity(player);
+            clearPlayerInventory(player);
+            teleportToSafeWorldSpawn(player);
+            return;
+        }
+
+        String roleName = participantRoles.get(uuid);
+        RoleDefinition role = roleName != null ? data.roles.get(roleName) : null;
+
+        if (currentPhase == Phase.RUNNING) {
+            if (role == null || role.isBypassEventFlow()) {
+                HoldingService.removePlayer(player);
+                if (role == null) {
+                    clearPlayerInventory(player);
+                    teleportToSafeWorldSpawn(player);
+                }
+                return;
+            }
+
+            role.ensureDefaults();
+            IdentityService.applyIdentity(player, role);
+            applyRoleKitIfNeeded(player, roleName, role);
+            HoldingService.removePlayer(player);
+            if (role.hasSpawn()) {
+                teleportToRoleSpawn(player, role);
+            } else {
+                teleportToSafeWorldSpawn(player);
+            }
+            return;
+        }
+
+        clearPlayerInventory(player);
+        if (role != null && !role.isBypassEventFlow() && !HoldingService.isContained(uuid)) {
+            HoldingService.addPlayer(player, ContainmentReason.CLOSED_ELIGIBLE_PARTICIPANT);
+        }
     }
 
     private static void applyRoleKitIfNeeded(ServerPlayerEntity player, String roleName, RoleDefinition role) {
@@ -368,5 +440,13 @@ public class EventSessionService {
         player.playerScreenHandler.sendContentUpdates();
         player.currentScreenHandler.sendContentUpdates();
         appliedKitRoles.put(player.getUuid(), roleName);
+    }
+
+    private static void clearPlayerInventory(ServerPlayerEntity player) {
+        player.getInventory().clear();
+        player.currentScreenHandler.setCursorStack(ItemStack.EMPTY);
+        player.playerScreenHandler.sendContentUpdates();
+        player.currentScreenHandler.sendContentUpdates();
+        appliedKitRoles.remove(player.getUuid());
     }
 }

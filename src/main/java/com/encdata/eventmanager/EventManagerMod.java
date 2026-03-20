@@ -20,6 +20,7 @@ public class EventManagerMod implements ModInitializer {
     public static final String MOD_ID = "eventmanager";
     public static final Identifier VOID_PRISON_DIMENSION = Identifier.of(MOD_ID, "void_prison");
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+    private static volatile boolean loggingEnabled = true;
     private static EventManagerMod instance;
     private EventSavedData data;
     private static MinecraftServer serverInstance;
@@ -27,21 +28,7 @@ public class EventManagerMod implements ModInitializer {
     @Override
     public void onInitialize() {
         instance = this;
-        this.data = EventSavedData.load();
-        boolean changed = EventSessionService.ensureDefaultConfiguration(this.data);
-        if (this.data.holdingDimension == null
-                || Identifier.of("minecraft", "overworld").equals(this.data.holdingDimension)
-                || Identifier.of("minecraft", "the_end").equals(this.data.holdingDimension)
-                || Identifier.of(MOD_ID, "void_prison_empty").equals(this.data.holdingDimension)) {
-            this.data.holdingDimension = VOID_PRISON_DIMENSION;
-            this.data.holdingX = 0.0;
-            this.data.holdingY = 100.0;
-            this.data.holdingZ = 0.0;
-            changed = true;
-        }
-        if (changed) {
-            this.saveData();
-        }
+        reloadConfig();
         
         IdentityService.init();
         HoldingService.init();
@@ -63,11 +50,57 @@ public class EventManagerMod implements ModInitializer {
         });
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> EventSessionService.handlePlayerRespawn(newPlayer));
 
-        LOGGER.info("Event Manager initialized.");
+        logInfo("Event Manager initialized.");
     }
 
     public static EventManagerMod getInstance() { return instance; }
     public static MinecraftServer getServerInstance() { return serverInstance; }
+    public static void setServerInstance(MinecraftServer server) { serverInstance = server; }
     public EventSavedData getData() { return data; }
     public void saveData() { data.save(); }
+
+    public EventSavedData reloadConfig() {
+        EventSavedData reloaded = EventSavedData.load();
+        boolean changed = EventSessionService.ensureDefaultConfiguration(reloaded);
+        if (reloaded.holdingDimension == null
+                || Identifier.of("minecraft", "overworld").equals(reloaded.holdingDimension)
+                || Identifier.of("minecraft", "the_end").equals(reloaded.holdingDimension)
+                || Identifier.of(MOD_ID, "void_prison_empty").equals(reloaded.holdingDimension)) {
+            reloaded.holdingDimension = VOID_PRISON_DIMENSION;
+            reloaded.holdingX = 0.0;
+            reloaded.holdingY = 100.0;
+            reloaded.holdingZ = 0.0;
+            changed = true;
+        }
+
+        this.data = reloaded;
+        loggingEnabled = this.data.enableLogging;
+        IdentityService.reloadPool();
+        if (changed) {
+            this.saveData();
+        }
+        return this.data;
+    }
+
+    public static boolean isLoggingEnabled() {
+        return loggingEnabled;
+    }
+
+    public static void logInfo(String message, Object... args) {
+        if (loggingEnabled) {
+            LOGGER.info(message, args);
+        }
+    }
+
+    public static void logWarn(String message, Object... args) {
+        if (loggingEnabled) {
+            LOGGER.warn(message, args);
+        }
+    }
+
+    public static void logError(String message, Object... args) {
+        if (loggingEnabled) {
+            LOGGER.error(message, args);
+        }
+    }
 }
