@@ -1,0 +1,10 @@
+{
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+  "accept": "text/html,application/xhtml+xml,application/xml;q\u003d0.9,image/avif,image/webp,image/apng,*/*;q\u003d0.8,application/signed-exchange;v\u003db3;q\u003d0.7",
+  "acceptLanguage": "ar-IQ,ar;q\u003d0.9,en-IQ;q\u003d0.8,en;q\u003d0.7,en-US;q\u003d0.6",
+  "referer": "",
+  "cookie": "",
+  "secChUa": "\"Chromium\";v\u003d\"146\", \"Not-A.Brand\";v\u003d\"24\", \"Google Chrome\";v\u003d\"146\"",
+  "secChUaMobile": "?0",
+  "secChUaPlatform": "\"Windows\""
+}

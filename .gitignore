@@ -1,0 +1,49 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Build / cache
+dist/
+build/
+out/
+target/
+coverage/
+.cache/
+tmp/
+temp/
+
+# Dependency dirs
+node_modules/
+vendor/
+
+# Archives
+*.zip
+*.tar
+*.gz
+*.rar
+
+# Runtime files
+*.pid
+*.seed
+
+# GitHub / CI noise
+*.local

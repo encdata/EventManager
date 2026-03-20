@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "eventmanager",
+  "version": "${version}",
+  "name": "EncData's Event Manager",
+  "description": "Server-side Fabric mod for organized events with role rules, holding control, editable kits, role spawns, and identity randomization.",
+  "authors": [
+    "EncData"
+  ],
+  "contact": {
+    "discord": "https://discord.gg/PerStggHSF"
+  },
+  "license": "MIT",
+  "icon": "assets/eventmanager/icon.png",
+  "environment": "server",
+  "entrypoints": {
+    "fabric-datagen": [
+      "com.encdata.client.EventManagerDataGenerator"
+    ],
+    "main": [
+      "com.encdata.eventmanager.EventManagerMod"
+    ]
+  },
+  "mixins": [
+    "eventmanager.mixins.json",
+    {
+      "config": "eventmanager.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}

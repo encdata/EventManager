@@ -1,0 +1,88 @@
+{
+  "adminAutoJoin": false,
+  "defaultRole": "Default",
+  "holdingX": 0.0,
+  "holdingY": 100.0,
+  "holdingZ": 0.0,
+  "holdingDimension": {
+    "namespace": "eventmanager",
+    "path": "void_prison"
+  },
+  "bypassPlayers": [],
+  "autoJoinPlayers": [],
+  "roles": {
+    "Default": {
+      "name": "Default",
+      "rules": {
+        "breakBlocks": true,
+        "placeBlocks": true,
+        "useItems": true,
+        "openBlocks": true,
+        "useContainers": true,
+        "interactEntities": true,
+        "pvpEnabled": true,
+        "pickupItems": true,
+        "dropItems": false
+      },
+      "randomizeName": true,
+      "randomizeSkin": true,
+      "bypassEventFlow": false,
+      "kit": [
+        {
+          "slot": 0,
+          "itemId": "minecraft:wooden_sword",
+          "count": 1,
+          "stackData": {
+            "id": "minecraft:wooden_sword",
+            "count": 1
+          }
+        },
+        {
+          "slot": 36,
+          "itemId": "minecraft:leather_boots",
+          "count": 1,
+          "stackData": {
+            "id": "minecraft:leather_boots",
+            "count": 1
+          }
+        },
+        {
+          "slot": 37,
+          "itemId": "minecraft:leather_leggings",
+          "count": 1,
+          "stackData": {
+            "id": "minecraft:leather_leggings",
+            "count": 1
+          }
+        },
+        {
+          "slot": 38,
+          "itemId": "minecraft:leather_chestplate",
+          "count": 1,
+          "stackData": {
+            "id": "minecraft:leather_chestplate",
+            "count": 1
+          }
+        },
+        {
+          "slot": 39,
+          "itemId": "minecraft:leather_helmet",
+          "count": 1,
+          "stackData": {
+            "id": "minecraft:leather_helmet",
+            "count": 1
+          }
+        },
+        {
+          "slot": 40,
+          "itemId": "minecraft:shield",
+          "count": 1,
+          "stackData": {
+            "id": "minecraft:shield",
+            "count": 1
+          }
+        }
+      ]
+    }
+  }
+}
