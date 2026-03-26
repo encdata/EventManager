@@ -78,8 +78,9 @@ public class RoleConfigGui {
         inventory.setStack(9, createIcon(Items.NAME_TAG, "Randomize Name", role.isRandomizeName()));
         inventory.setStack(10, createIcon(Items.PLAYER_HEAD, "Randomize Skin", role.isRandomizeSkin()));
         inventory.setStack(11, createIcon(Items.ENDER_PEARL, "Bypass Event Flow", role.isBypassEventFlow()));
-        inventory.setStack(12, actionIcon(Items.COMPASS, role.hasSpawn() ? "Spawn Is Set" : "Spawn Not Set"));
-        inventory.setStack(13, actionIcon(Items.CHEST, "Change Kit"));
+        inventory.setStack(12, createIcon(Items.TOTEM_OF_UNDYING, "Death Immunity", rules.deathImmunity()));
+        inventory.setStack(13, actionIcon(Items.COMPASS, role.hasSpawn() ? "Spawn Is Set" : "Spawn Not Set"));
+        inventory.setStack(14, actionIcon(Items.CHEST, "Change Kit"));
     }
 
     private static ItemStack createIcon(net.minecraft.item.Item item, String name, boolean enabled) {
@@ -97,19 +98,20 @@ public class RoleConfigGui {
     private static boolean handleSlotClick(ServerPlayerEntity player, int slot, RoleDefinition role) {
         RoleRules r = role.getRules();
         switch (slot) {
-            case 0 -> role.setRules(new RoleRules(!r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems()));
-            case 1 -> role.setRules(new RoleRules(r.breakBlocks(), !r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems()));
-            case 2 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), !r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems()));
-            case 3 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), !r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems()));
-            case 4 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), !r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems()));
-            case 5 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), !r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems()));
-            case 6 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), !r.pvpEnabled(), r.pickupItems(), r.dropItems()));
-            case 7 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), !r.pickupItems(), r.dropItems()));
-            case 8 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), !r.dropItems()));
+            case 0 -> role.setRules(new RoleRules(!r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 1 -> role.setRules(new RoleRules(r.breakBlocks(), !r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 2 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), !r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 3 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), !r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 4 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), !r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 5 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), !r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 6 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), !r.pvpEnabled(), r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 7 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), !r.pickupItems(), r.dropItems(), r.deathImmunity()));
+            case 8 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), !r.dropItems(), r.deathImmunity()));
             case 9 -> role.setRandomizeName(!role.isRandomizeName());
             case 10 -> role.setRandomizeSkin(!role.isRandomizeSkin());
             case 11 -> role.setBypassEventFlow(!role.isBypassEventFlow());
-            case 13 -> {
+            case 12 -> role.setRules(new RoleRules(r.breakBlocks(), r.placeBlocks(), r.useItems(), r.openBlocks(), r.useContainers(), r.interactEntities(), r.pvpEnabled(), r.pickupItems(), r.dropItems(), !r.deathImmunity()));
+            case 14 -> {
                 RoleKitGui.open(player, role);
                 return true;
             }

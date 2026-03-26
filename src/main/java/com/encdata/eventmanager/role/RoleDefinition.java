@@ -33,7 +33,7 @@ public class RoleDefinition {
 
     public RoleDefinition(String name) {
         this.name = name;
-        this.rules = RoleRules.defaultRules();
+        this.rules = RoleRules.fullyEnabled();
         this.randomizeName = true;
         this.randomizeSkin = true;
         this.bypassEventFlow = false;

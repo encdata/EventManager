@@ -36,7 +36,11 @@ public class EventManagerMod implements ModInitializer {
         EventCommand.init();
 
         ServerLifecycleEvents.SERVER_STARTING.register(server -> serverInstance = server);
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> IdentityPoolService.startBackgroundRefresh());
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            if (data.backgroundIdentityRefresh) {
+                IdentityPoolService.startBackgroundRefresh();
+            }
+        });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
             IdentityPoolService.stopBackgroundRefresh();
             if (serverInstance == server) {
@@ -79,6 +83,13 @@ public class EventManagerMod implements ModInitializer {
         this.data = reloaded;
         loggingEnabled = this.data.enableLogging;
         IdentityService.reloadPool();
+        if (serverInstance != null) {
+            if (this.data.backgroundIdentityRefresh) {
+                IdentityPoolService.startBackgroundRefresh();
+            } else {
+                IdentityPoolService.stopBackgroundRefresh();
+            }
+        }
         if (changed) {
             this.saveData();
         }

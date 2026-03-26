@@ -3,6 +3,7 @@ package com.encdata.eventmanager.rules;
 import com.encdata.eventmanager.queue.HoldingService;
 import com.encdata.eventmanager.role.RoleDefinition;
 import com.encdata.eventmanager.session.EventSessionService;
+import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.player.*;
 import net.minecraft.command.DefaultPermissions;
 import net.minecraft.block.entity.BlockEntity;
@@ -10,6 +11,7 @@ import net.minecraft.inventory.Inventory;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.math.BlockPos;
@@ -70,6 +72,16 @@ public class RuleService {
             }
             return ActionResult.PASS;
         });
+
+        ServerPlayerEvents.ALLOW_DEATH.register((player, damageSource, damageAmount) -> {
+            if (!hasDeathImmunity(player) || hasTotemInHand(player)) {
+                return true;
+            }
+
+            // Keep the player barely alive instead of letting vanilla finish the death flow.
+            player.setHealth(1.0F);
+            return false;
+        });
     }
 
     public static boolean shouldCancel(PlayerEntity player, String ruleName, BlockPos pos) {
@@ -100,5 +112,19 @@ public class RuleService {
             case "dropItems" -> !role.getRules().dropItems();
             default -> false;
         };
+    }
+
+    public static boolean hasDeathImmunity(ServerPlayerEntity player) {
+        if (player == null || !EventSessionService.isActive()) {
+            return false;
+        }
+
+        RoleDefinition role = EventSessionService.getPlayerRole(player.getUuid());
+        return role != null && role.getRules().deathImmunity();
+    }
+
+    private static boolean hasTotemInHand(ServerPlayerEntity player) {
+        return player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING)
+                || player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING);
     }
 }

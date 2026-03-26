@@ -9,13 +9,14 @@ public record RoleRules(
     boolean interactEntities,
     boolean pvpEnabled,
     boolean pickupItems,
-    boolean dropItems
+    boolean dropItems,
+    boolean deathImmunity
 ) {
     public static RoleRules defaultRules() {
-        return new RoleRules(false, false, false, false, false, false, false, false, false);
+        return new RoleRules(false, false, false, false, false, false, false, false, false, false);
     }
 
     public static RoleRules fullyEnabled() {
-        return new RoleRules(true, true, true, true, true, true, true, true, true);
+        return new RoleRules(true, true, true, true, true, true, true, true, true, false);
     }
 }

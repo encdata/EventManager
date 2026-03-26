@@ -18,6 +18,7 @@ public class EventSavedData {
 
     public boolean adminAutoJoin = false;
     public boolean enableLogging = true;
+    public boolean backgroundIdentityRefresh = true;
     public String defaultRole = null;
     
     // Holding configuration

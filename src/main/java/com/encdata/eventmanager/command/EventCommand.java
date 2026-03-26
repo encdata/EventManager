@@ -12,6 +12,7 @@ import com.encdata.eventmanager.role.RoleDefinition;
 import com.encdata.eventmanager.session.EventSessionService;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.command.DefaultPermissions;
 import net.minecraft.command.argument.EntityArgumentType;
@@ -30,6 +31,12 @@ import static net.minecraft.server.command.CommandManager.literal;
 public class EventCommand {
     private static final int IDENTITY_LIST_PREVIEW_LIMIT = 25;
     private static final int MAX_CHAT_MESSAGE_LENGTH = 30000;
+    private static final SuggestionProvider<ServerCommandSource> ROLE_SUGGESTIONS = (context, builder) -> {
+        for (String roleName : EventManagerMod.getInstance().getData().roles.keySet()) {
+            builder.suggest(roleName);
+        }
+        return builder.buildFuture();
+    };
 
     public static void init() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -91,7 +98,10 @@ public class EventCommand {
                     }
                     EventSessionService.pruneContainmentForCurrentPhase();
                     context.getSource().sendFeedback(() -> Text.literal(
-                            "Reloaded config. logging=" + data.enableLogging + ", roles=" + data.roles.size() + ", defaultRole=" + data.defaultRole
+                            "Reloaded config. logging=" + data.enableLogging
+                                    + ", backgroundIdentityRefresh=" + data.backgroundIdentityRefresh
+                                    + ", roles=" + data.roles.size()
+                                    + ", defaultRole=" + data.defaultRole
                     ), true);
                     return 1;
                 }))
@@ -274,26 +284,6 @@ public class EventCommand {
                         sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     }))
-                    .then(literal("import").then(argument("url", StringArgumentType.greedyString()).executes(context -> {
-                        String url = StringArgumentType.getString(context, "url");
-                        IdentityPoolService.ImportResult result = IdentityPoolService.importFromUrl(url);
-                        if (!result.success()) {
-                            context.getSource().sendError(Text.literal("Failed to import identities from " + url + ": " + result.error()));
-                            return 0;
-                        }
-
-                        IdentityPoolService.LoadResult loadResult = result.loadResult();
-                        context.getSource().sendFeedback(() -> Text.literal(
-                                "Imported identities to " + loadResult.path()
-                                        + ": importedNames=" + result.importedNameCount()
-                                        + ", importedSkins=" + result.importedSkinCount()
-                                        + ", loadedNames=" + loadResult.loadedNameCount()
-                                        + ", loadedSkins=" + loadResult.loadedSkinCount()
-                                        + ", invalidNames=" + loadResult.invalidNameCount()
-                                        + ", invalidSkins=" + loadResult.invalidSkinCount()
-                        ), true);
-                        return 1;
-                    })))
                     .then(literal("reload").executes(context -> {
                         IdentityPoolService.LoadResult result = IdentityService.reloadPool();
                         context.getSource().sendFeedback(() -> Text.literal(
@@ -321,7 +311,15 @@ public class EventCommand {
                         context.getSource().sendFeedback(() -> Text.literal("adminAutoJoin set to " + value), true);
                         return 1;
                     })))
-                    .then(literal("defaultRole").then(argument("role", StringArgumentType.word()).executes(context -> {
+                    .then(literal("backgroundIdentityRefresh").then(argument("value", BoolArgumentType.bool()).executes(context -> {
+                        boolean value = BoolArgumentType.getBool(context, "value");
+                        EventManagerMod.getInstance().getData().backgroundIdentityRefresh = value;
+                        EventManagerMod.getInstance().saveData();
+                        EventManagerMod.getInstance().reloadConfig();
+                        context.getSource().sendFeedback(() -> Text.literal("backgroundIdentityRefresh set to " + value), true);
+                        return 1;
+                    })))
+                    .then(literal("defaultRole").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String role = StringArgumentType.getString(context, "role");
                         if (!EventManagerMod.getInstance().getData().roles.containsKey(role)) {
                             context.getSource().sendError(Text.literal("Role not found: " + role));
@@ -345,7 +343,7 @@ public class EventCommand {
                         sendSafeFeedback(context.getSource(), "Roles: " + EventManagerMod.getInstance().getData().roles.keySet(), false);
                         return 1;
                     }))
-                    .then(literal("info").then(argument("role", StringArgumentType.word()).executes(context -> {
+                    .then(literal("info").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String roleName = StringArgumentType.getString(context, "role");
                         RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(roleName);
                         if (role == null) {
@@ -362,6 +360,7 @@ public class EventCommand {
                         sb.append("pvpEnabled=").append(role.getRules().pvpEnabled()).append("\n");
                         sb.append("pickupItems=").append(role.getRules().pickupItems()).append("\n");
                         sb.append("dropItems=").append(role.getRules().dropItems()).append("\n");
+                        sb.append("deathImmunity=").append(role.getRules().deathImmunity()).append("\n");
                         sb.append("bypassEventFlow=").append(role.isBypassEventFlow()).append("\n");
                         sb.append("randomizeName=").append(role.isRandomizeName()).append("\n");
                         sb.append("randomizeSkin=").append(role.isRandomizeSkin()).append("\n");
@@ -377,7 +376,7 @@ public class EventCommand {
                         sendSafeFeedback(context.getSource(), sb.toString(), false);
                         return 1;
                     })))
-                    .then(literal("assign").then(argument("player", EntityArgumentType.player()).then(argument("role", StringArgumentType.word()).executes(context -> {
+                    .then(literal("assign").then(argument("player", EntityArgumentType.player()).then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         ServerPlayerEntity player = EntityArgumentType.getPlayer(context, "player");
                         String roleName = StringArgumentType.getString(context, "role");
                         RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(roleName);
@@ -403,7 +402,7 @@ public class EventCommand {
                         context.getSource().sendFeedback(() -> Text.literal(sb.toString()), true);
                         return 1;
                     }))))
-                    .then(literal("applykit").then(argument("role", StringArgumentType.word()).executes(context -> {
+                    .then(literal("applykit").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String roleName = StringArgumentType.getString(context, "role");
                         ServerPlayerEntity player = context.getSource().getPlayer();
                         if (player == null) {
@@ -447,7 +446,7 @@ public class EventCommand {
                         ), false);
                         return 1;
                     })))
-                    .then(literal("configure").then(argument("name", StringArgumentType.word()).executes(context -> {
+                    .then(literal("configure").then(argument("name", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String name = StringArgumentType.getString(context, "name");
                         RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(name);
                         if (role == null) {
@@ -460,7 +459,7 @@ public class EventCommand {
                         }
                         return 1;
                     })))
-                    .then(literal("setspawn").then(argument("role", StringArgumentType.word()).executes(context -> {
+                    .then(literal("setspawn").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String roleName = StringArgumentType.getString(context, "role");
                         RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(roleName);
                         if (role == null) {
@@ -475,7 +474,7 @@ public class EventCommand {
                         }
                         return 1;
                     })))
-                    .then(literal("clearspawn").then(argument("role", StringArgumentType.word()).executes(context -> {
+                    .then(literal("clearspawn").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String roleName = StringArgumentType.getString(context, "role");
                         RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(roleName);
                         if (role == null) {
@@ -487,7 +486,7 @@ public class EventCommand {
                         context.getSource().sendFeedback(() -> Text.literal("Spawn cleared for role: " + roleName), true);
                         return 1;
                     })))
-                    .then(literal("setbypassflow").then(argument("role", StringArgumentType.word()).then(argument("bypass", BoolArgumentType.bool()).executes(context -> {
+                    .then(literal("setbypassflow").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).then(argument("bypass", BoolArgumentType.bool()).executes(context -> {
                         String roleName = StringArgumentType.getString(context, "role");
                         boolean bypass = BoolArgumentType.getBool(context, "bypass");
                         RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(roleName);
