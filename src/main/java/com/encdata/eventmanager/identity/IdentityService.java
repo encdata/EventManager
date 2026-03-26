@@ -64,6 +64,11 @@ public final class IdentityService {
 
     public static void applyIdentity(ServerPlayerEntity player, RoleDefinition role) {
         UUID uuid = player.getUuid();
+        if (shouldSkipProfileRandomization(player)) {
+            clearIdentity(player);
+            return;
+        }
+
         boolean wantsRandomName = role.isRandomizeName();
         boolean wantsRandomSkin = role.isRandomizeSkin();
 
@@ -105,6 +110,11 @@ public final class IdentityService {
     }
 
     public static boolean rerollIdentity(ServerPlayerEntity player, RoleDefinition role, boolean rerollName, boolean rerollSkin) {
+        if (shouldSkipProfileRandomization(player)) {
+            clearIdentity(player);
+            return false;
+        }
+
         if (role == null || (!rerollName && !rerollSkin)) {
             return false;
         }
@@ -349,5 +359,14 @@ public final class IdentityService {
         EventManagerMod.getServerInstance().getPlayerManager().sendPlayerStatus(player);
         player.networkHandler.requestTeleport(player.getX(), player.getY(), player.getZ(), player.getYaw(), player.getPitch());
         player.sendAbilitiesUpdate();
+    }
+
+    private static boolean shouldSkipProfileRandomization(ServerPlayerEntity player) {
+        if (player.getCommandSource().getPermissions().hasPermission(net.minecraft.command.DefaultPermissions.MODERATORS)) {
+            return true;
+        }
+
+        var server = player.getCommandSource().getServer();
+        return server.isSingleplayer() && server.isHost(player.getPlayerConfigEntry());
     }
 }

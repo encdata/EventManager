@@ -45,9 +45,12 @@ public class EventManagerMod implements ModInitializer {
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            UserCacheCleaner.removePlayerEntry(handler.getPlayer());
             // Always evaluate on join; CLOSED still means containment is active.
             EventSessionService.evaluatePlayer(handler.getPlayer(), data);
         });
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
+                UserCacheCleaner.removePlayerEntry(handler.getPlayer()));
         ServerPlayerEvents.AFTER_RESPAWN.register((oldPlayer, newPlayer, alive) -> EventSessionService.handlePlayerRespawn(newPlayer));
 
         logInfo("Event Manager initialized.");

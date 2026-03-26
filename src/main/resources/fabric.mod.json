@@ -12,7 +12,7 @@
   },
   "license": "MIT",
   "icon": "assets/eventmanager/icon.png",
-  "environment": "server",
+  "environment": "*",
   "entrypoints": {
     "fabric-datagen": [
       "com.encdata.client.EventManagerDataGenerator"

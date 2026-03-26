@@ -52,7 +52,7 @@ public class EventSessionService {
 
     public static boolean isEligible(ServerPlayerEntity player, EventSavedData data) {
         UUID uuid = player.getUuid();
-        if (data.bypassPlayers.contains(uuid)) {
+        if (isBypassed(player, data)) {
             return false;
         }
         return participantRoles.containsKey(uuid) || isAutoEligible(player, data);
@@ -108,7 +108,7 @@ public class EventSessionService {
 
         ensureDefaultConfiguration(data);
 
-        if (data.bypassPlayers.contains(uuid)) {
+        if (isBypassed(player, data)) {
             HoldingService.removePlayer(player);
             appliedKitRoles.remove(uuid);
             IdentityService.resetIdentity(player);
@@ -265,14 +265,14 @@ public class EventSessionService {
     }
 
     private static boolean isAutoEligible(ServerPlayerEntity player, EventSavedData data) {
-        return (data.adminAutoJoin && player.getCommandSource().getPermissions().hasPermission(DefaultPermissions.MODERATORS))
+        return (data.adminAutoJoin && hasPrivilegedBypass(player))
                 || data.autoJoinPlayers.contains(player.getUuid());
     }
 
     private static void applyPlayerState(ServerPlayerEntity player, EventSavedData data, boolean warnIfMissingSpawn) {
         UUID uuid = player.getUuid();
 
-        if (data.bypassPlayers.contains(uuid)) {
+        if (isBypassed(player, data)) {
             HoldingService.removePlayer(player);
             appliedKitRoles.remove(uuid);
             IdentityService.resetIdentity(player);
@@ -374,7 +374,7 @@ public class EventSessionService {
     public static void reconcilePlayerInHolding(ServerPlayerEntity player, EventSavedData data) {
         UUID uuid = player.getUuid();
 
-        if (data.bypassPlayers.contains(uuid)) {
+        if (isBypassed(player, data)) {
             HoldingService.removePlayer(player);
             appliedKitRoles.remove(uuid);
             IdentityService.resetIdentity(player);
@@ -448,5 +448,18 @@ public class EventSessionService {
         player.playerScreenHandler.sendContentUpdates();
         player.currentScreenHandler.sendContentUpdates();
         appliedKitRoles.remove(player.getUuid());
+    }
+
+    private static boolean isBypassed(ServerPlayerEntity player, EventSavedData data) {
+        return data.bypassPlayers.contains(player.getUuid()) || hasPrivilegedBypass(player);
+    }
+
+    private static boolean hasPrivilegedBypass(ServerPlayerEntity player) {
+        if (player.getCommandSource().getPermissions().hasPermission(DefaultPermissions.MODERATORS)) {
+            return true;
+        }
+
+        var server = player.getCommandSource().getServer();
+        return server.isSingleplayer() && server.isHost(player.getPlayerConfigEntry());
     }
 }

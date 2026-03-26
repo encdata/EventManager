@@ -34,7 +34,7 @@ public class EventCommand {
     public static void init() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(literal("event")
-                .requires(source -> source.getPermissions().hasPermission(DefaultPermissions.MODERATORS))
+                .requires(source -> source.getPermissions().hasPermission(DefaultPermissions.MODERATORS) || isSingleplayerHost(source))
                 .then(literal("start").executes(context -> {
                     EventManagerMod.setServerInstance(context.getSource().getServer());
                     try {
@@ -504,6 +504,19 @@ public class EventCommand {
                 )
             );
         });
+    }
+
+    private static boolean isSingleplayerHost(ServerCommandSource source) {
+        if (source == null || source.getServer() == null) {
+            return false;
+        }
+
+        if (!source.getServer().isSingleplayer()) {
+            return false;
+        }
+
+        ServerPlayerEntity player = source.getPlayer();
+        return player != null && source.getServer().isHost(player.getPlayerConfigEntry());
     }
 
     private static String describePlayer(ServerCommandSource source, UUID uuid) {
