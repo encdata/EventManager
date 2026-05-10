@@ -12,9 +12,12 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.UUID;
 
 public class EventManagerMod implements ModInitializer {
     public static final String MOD_ID = "eventmanager";
@@ -50,8 +53,15 @@ public class EventManagerMod implements ModInitializer {
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             UserCacheCleaner.removePlayerEntry(handler.getPlayer());
-            // Always evaluate on join; CLOSED still means containment is active.
-            EventSessionService.evaluatePlayer(handler.getPlayer(), data);
+            // Run after the join packet flow settles; immediate dimension/profile changes
+            // can leave clients stuck on Loading Terrain after op/deop transitions.
+            UUID uuid = handler.getPlayer().getUuid();
+            server.execute(() -> {
+                ServerPlayerEntity player = server.getPlayerManager().getPlayer(uuid);
+                if (player != null) {
+                    EventSessionService.evaluatePlayer(player, data);
+                }
+            });
         });
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
                 UserCacheCleaner.removePlayerEntry(handler.getPlayer()));

@@ -8,9 +8,12 @@ import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -30,18 +33,29 @@ public class HoldingService {
         }
     }
 
-    private static final Set<UUID> containedPlayers = new HashSet<>();
-    private static final java.util.Map<UUID, ContainmentReason> containmentReasons = new java.util.HashMap<>();
+    private static final Set<UUID> containedPlayers = new LinkedHashSet<>();
+    private static final Map<UUID, ContainmentReason> containmentReasons = new HashMap<>();
+    private static final Map<UUID, Integer> queuePositions = new HashMap<>();
+    private static int nextQueuePosition = 1;
+    private static int queueDisplayTicks = 0;
 
     public static void init() {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             EventSavedData data = EventManagerMod.getInstance().getData();
             Vec3d holdingPos = new Vec3d(data.holdingX, data.holdingY, data.holdingZ);
+            boolean refreshQueueDisplay = data.showQueuePosition && ++queueDisplayTicks >= 100;
+            if (refreshQueueDisplay) {
+                queueDisplayTicks = 0;
+            }
             
             for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
                 boolean inHoldingDimension = player.getEntityWorld().getRegistryKey().getValue().equals(data.holdingDimension);
                 if (inHoldingDimension) {
                     EventSessionService.reconcilePlayerInHolding(player, data);
+                }
+
+                if (!containedPlayers.contains(player.getUuid()) && EventSessionService.shouldEvaluateForClosedQueue(player, data)) {
+                    EventSessionService.evaluatePlayer(player, data);
                 }
 
                 if (containedPlayers.contains(player.getUuid())) {
@@ -56,6 +70,10 @@ public class HoldingService {
                         player.requestTeleport(holdingPos.x, holdingPos.y, holdingPos.z);
                         player.setVelocity(0, 0, 0);
                     }
+
+                    if (refreshQueueDisplay) {
+                        displayQueuePosition(player, data);
+                    }
                 }
             }
         });
@@ -66,19 +84,24 @@ public class HoldingService {
     }
 
     public static void addPlayer(ServerPlayerEntity player, ContainmentReason reason) {
-        containedPlayers.add(player.getUuid());
+        boolean added = containedPlayers.add(player.getUuid());
         containmentReasons.put(player.getUuid(), reason);
+        queuePositions.computeIfAbsent(player.getUuid(), ignored -> nextQueuePosition++);
         EventSavedData data = EventManagerMod.getInstance().getData();
         teleportToHolding(player, data);
         
         player.getAbilities().flying = true;
         player.getAbilities().allowFlying = true;
         player.sendAbilitiesUpdate();
+        if (added) {
+            displayQueuePosition(player, data);
+        }
     }
 
     public static void removePlayer(ServerPlayerEntity player) {
         if (containedPlayers.remove(player.getUuid())) {
             containmentReasons.remove(player.getUuid());
+            queuePositions.remove(player.getUuid());
             restorePlayer(player);
         }
     }
@@ -86,6 +109,7 @@ public class HoldingService {
     public static void removePlayer(UUID uuid) {
         containedPlayers.remove(uuid);
         containmentReasons.remove(uuid);
+        queuePositions.remove(uuid);
     }
 
     private static void teleportToHolding(ServerPlayerEntity player, EventSavedData data) {
@@ -113,6 +137,8 @@ public class HoldingService {
         }
         containedPlayers.clear();
         containmentReasons.clear();
+        queuePositions.clear();
+        nextQueuePosition = 1;
     }
 
     public static boolean isContained(UUID uuid) {
@@ -120,10 +146,29 @@ public class HoldingService {
     }
 
     public static Set<UUID> getContainedPlayersSnapshot() {
-        return new HashSet<>(containedPlayers);
+        return new LinkedHashSet<>(containedPlayers);
     }
 
     public static ContainmentReason getContainmentReason(UUID uuid) {
         return containmentReasons.get(uuid);
+    }
+
+    public static Integer getQueuePosition(UUID uuid) {
+        return queuePositions.get(uuid);
+    }
+
+    public static int getQueueSize() {
+        return containedPlayers.size();
+    }
+
+    private static void displayQueuePosition(ServerPlayerEntity player, EventSavedData data) {
+        if (!data.showQueuePosition) {
+            return;
+        }
+
+        Integer position = queuePositions.get(player.getUuid());
+        if (position != null) {
+            player.sendMessage(Text.literal("Queue #" + position + " / " + getQueueSize()), true);
+        }
     }
 }

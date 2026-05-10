@@ -3,6 +3,8 @@ Event Manager is a server-side Fabric mod for hosting organized Minecraft events
 
 - Role-based permissions
 - Pre-event holding control
+- Queue positions while players wait
+- Randomized role assignment by role slot counts
 - Role spawns
 - Editable role kits
 - Randomized names and skins
@@ -28,6 +30,7 @@ Use it to contain players before an event, assign them roles, equip them with ki
 - Per-role spawn points
 - Per-role kits
 - Default kit support
+- Configurable queue role slots for randomized release assignment
 - Optional role bypass flow
 - Optional random name and skin assignment
 - Identity pool import and reload commands
@@ -63,9 +66,11 @@ Main command: `/event`
 
 Core flow:
 
+- `/event help`
 - `/event start`
 - `/event end`
 - `/event status`
+- `/event validate`
 
 Debug:
 
@@ -86,6 +91,15 @@ Autojoin:
 - `/event autojoin add <player>`
 - `/event autojoin remove <player>`
 - `/event autojoin list`
+
+Queue:
+
+- `/event queue set <role> <amount>`
+- `/event queue remove <role>`
+- `/event queue clear`
+- `/event queue list`
+- `/event queue display <true|false>`
+- `/event queue position <player>`
 
 Identities:
 

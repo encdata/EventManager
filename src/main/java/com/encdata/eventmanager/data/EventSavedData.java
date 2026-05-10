@@ -19,6 +19,7 @@ public class EventSavedData {
     public boolean adminAutoJoin = false;
     public boolean enableLogging = true;
     public boolean backgroundIdentityRefresh = true;
+    public boolean showQueuePosition = true;
     public String defaultRole = null;
     
     // Holding configuration
@@ -30,6 +31,7 @@ public class EventSavedData {
     public Set<UUID> bypassPlayers = new HashSet<>();
     public Set<UUID> autoJoinPlayers = new HashSet<>();
     public Map<String, RoleDefinition> roles = new HashMap<>();
+    public Map<String, Integer> roleQueueLimits = new LinkedHashMap<>();
 
     public static EventSavedData load() {
         if (!Files.exists(CONFIG_PATH)) {
