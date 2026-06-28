@@ -11,6 +11,7 @@ import com.encdata.eventmanager.queue.HoldingService.ContainmentReason;
 import com.encdata.eventmanager.role.RoleDefinition;
 import com.encdata.eventmanager.session.EventSessionService;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -48,8 +49,10 @@ public class EventCommand {
                 .then(literal("start").executes(context -> {
                     EventManagerMod.setServerInstance(context.getSource().getServer());
                     try {
-                        EventSessionService.startEvent(context.getSource().getServer().getPlayerManager().getPlayerList());
-                        context.getSource().sendFeedback(() -> Text.literal("Event started! Phase: RUNNING (participants released from holding)"), true);
+                        EventSessionService.RoleDistributionResult distribution = EventSessionService.startEvent(context.getSource().getServer().getPlayerManager().getPlayerList());
+                        String message = "Event started! Phase: RUNNING (participants released from holding)"
+                                + describeDistribution(distribution);
+                        context.getSource().sendFeedback(() -> Text.literal(message), true);
                         return 1;
                     } catch (Exception e) {
                         EventManagerMod.logError("Failed to start event", e);
@@ -106,6 +109,14 @@ public class EventCommand {
                                     + ", roles=" + data.roles.size()
                                     + ", defaultRole=" + data.defaultRole
                     ), true);
+                    return 1;
+                }))
+                .then(literal("help").executes(context -> {
+                    sendSafeFeedback(context.getSource(), buildHelpText(), false);
+                    return 1;
+                }))
+                .then(literal("validate").executes(context -> {
+                    sendSafeFeedback(context.getSource(), validateConfiguration(EventManagerMod.getInstance().getData()), false);
                     return 1;
                 }))
                 .then(literal("debug")
@@ -265,6 +276,66 @@ public class EventCommand {
                         sendSafeFeedback(context.getSource(), "Autojoin players: " + EventManagerMod.getInstance().getData().autoJoinPlayers, false);
                         return 1;
                     }))
+                )
+                .then(literal("queue")
+                    .then(literal("set").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).then(argument("amount", IntegerArgumentType.integer(0)).executes(context -> {
+                        String roleName = StringArgumentType.getString(context, "role");
+                        int amount = IntegerArgumentType.getInteger(context, "amount");
+                        EventSavedData data = EventManagerMod.getInstance().getData();
+                        if (!data.roles.containsKey(roleName)) {
+                            context.getSource().sendError(Text.literal("Role not found: " + roleName));
+                            return 0;
+                        }
+
+                        if (amount == 0) {
+                            data.roleQueueLimits.remove(roleName);
+                            context.getSource().sendFeedback(() -> Text.literal("Removed queue slots for role " + roleName + "."), true);
+                        } else {
+                            data.roleQueueLimits.put(roleName, amount);
+                            context.getSource().sendFeedback(() -> Text.literal("Queue will assign up to " + amount + " player(s) to role " + roleName + " when the event starts."), true);
+                        }
+                        EventManagerMod.getInstance().saveData();
+                        return 1;
+                    }))))
+                    .then(literal("remove").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
+                        String roleName = StringArgumentType.getString(context, "role");
+                        boolean removed = EventManagerMod.getInstance().getData().roleQueueLimits.remove(roleName) != null;
+                        EventManagerMod.getInstance().saveData();
+                        if (!removed) {
+                            context.getSource().sendError(Text.literal("No queue slots were configured for role " + roleName + "."));
+                            return 0;
+                        }
+                        context.getSource().sendFeedback(() -> Text.literal("Removed queue slots for role " + roleName + "."), true);
+                        return 1;
+                    })))
+                    .then(literal("clear").executes(context -> {
+                        EventManagerMod.getInstance().getData().roleQueueLimits.clear();
+                        EventManagerMod.getInstance().saveData();
+                        context.getSource().sendFeedback(() -> Text.literal("Cleared all queue role slots."), true);
+                        return 1;
+                    }))
+                    .then(literal("list").executes(context -> {
+                        EventSavedData data = EventManagerMod.getInstance().getData();
+                        sendSafeFeedback(context.getSource(), describeQueue(data), false);
+                        return 1;
+                    }))
+                    .then(literal("display").then(argument("value", BoolArgumentType.bool()).executes(context -> {
+                        boolean value = BoolArgumentType.getBool(context, "value");
+                        EventManagerMod.getInstance().getData().showQueuePosition = value;
+                        EventManagerMod.getInstance().saveData();
+                        context.getSource().sendFeedback(() -> Text.literal("showQueuePosition set to " + value), true);
+                        return 1;
+                    })))
+                    .then(literal("position").then(argument("player", EntityArgumentType.player()).executes(context -> {
+                        ServerPlayerEntity player = EntityArgumentType.getPlayer(context, "player");
+                        Integer position = HoldingService.getQueuePosition(player.getUuid());
+                        if (position == null) {
+                            context.getSource().sendFeedback(() -> Text.literal(player.getName().getString() + " is not currently in the queue."), false);
+                        } else {
+                            context.getSource().sendFeedback(() -> Text.literal(player.getName().getString() + " is Queue #" + position + " / " + HoldingService.getQueueSize() + "."), false);
+                        }
+                        return 1;
+                    })))
                 )
                 .then(literal("identities")
                     .then(literal("list").executes(context -> {
@@ -594,6 +665,107 @@ public class EventCommand {
             usernames.add(username);
         }
         return new ArrayList<>(usernames);
+    }
+
+    private static String describeDistribution(EventSessionService.RoleDistributionResult distribution) {
+        if (distribution == null || !distribution.usedQueueLimits()) {
+            return "";
+        }
+
+        StringBuilder sb = new StringBuilder(" Queue distribution: queued=")
+                .append(distribution.queuedPlayers())
+                .append(", assigned=");
+        boolean first = true;
+        for (Map.Entry<String, Integer> entry : distribution.assignedCounts().entrySet()) {
+            if (!first) {
+                sb.append(", ");
+            }
+            first = false;
+            sb.append(entry.getKey()).append("=").append(entry.getValue());
+        }
+        if (distribution.unfilledSlots() > 0) {
+            sb.append(", unfilledSlots=").append(distribution.unfilledSlots());
+        }
+        return sb.toString();
+    }
+
+    private static String describeQueue(EventSavedData data) {
+        StringBuilder sb = new StringBuilder("Queue: contained=")
+                .append(HoldingService.getQueueSize())
+                .append(", showQueuePosition=")
+                .append(data.showQueuePosition)
+                .append("\nRole slots:");
+
+        if (data.roleQueueLimits == null || data.roleQueueLimits.isEmpty()) {
+            sb.append(" none");
+            return sb.toString();
+        }
+
+        for (Map.Entry<String, Integer> entry : data.roleQueueLimits.entrySet()) {
+            sb.append("\n- ").append(entry.getKey()).append(": ").append(entry.getValue());
+        }
+        return sb.toString();
+    }
+
+    private static String buildHelpText() {
+        return """
+                Event Manager commands:
+                /event status - Show phase, containment, and participant counts.
+                /event start - Start the event and release assigned participants.
+                /event end - End the event, reset identities, and return to CLOSED.
+                /event validate - Check role and queue configuration for common setup issues.
+                /event queue list - Show queue slots and current contained count.
+                /event queue set <role> <amount> - Randomly assign up to amount players to a role on start.
+                /event roles list - List configured roles.
+                /event roles configure <role> - Open the role settings GUI.
+                /event roles setspawn <role> - Save your current position as that's role's spawn.
+                /event identities reload - Reload identity pool files.
+                /event debug participants - Inspect runtime participant state.
+                """;
+    }
+
+    private static String validateConfiguration(EventSavedData data) {
+        StringBuilder sb = new StringBuilder("Event Manager validation:\n");
+        int issues = 0;
+
+        if (data.defaultRole == null || !data.roles.containsKey(data.defaultRole)) {
+            issues++;
+            sb.append("- Default role is missing or invalid: ").append(data.defaultRole).append("\n");
+        }
+
+        for (Map.Entry<String, RoleDefinition> entry : data.roles.entrySet()) {
+            RoleDefinition role = entry.getValue();
+            if (role == null) {
+                issues++;
+                sb.append("- Role entry is null: ").append(entry.getKey()).append("\n");
+                continue;
+            }
+
+            if (!role.isBypassEventFlow() && !role.hasSpawn()) {
+                issues++;
+                sb.append("- Role ").append(entry.getKey()).append(" has no spawn. Use /event roles setspawn ")
+                        .append(entry.getKey()).append("\n");
+            }
+        }
+
+        if (data.roleQueueLimits != null) {
+            for (Map.Entry<String, Integer> entry : data.roleQueueLimits.entrySet()) {
+                if (!data.roles.containsKey(entry.getKey())) {
+                    issues++;
+                    sb.append("- Queue references missing role: ").append(entry.getKey()).append("\n");
+                } else if (entry.getValue() == null || entry.getValue() < 0) {
+                    issues++;
+                    sb.append("- Queue amount for ").append(entry.getKey()).append(" must be zero or greater.\n");
+                }
+            }
+        }
+
+        if (issues == 0) {
+            sb.append("No obvious setup issues found.");
+        } else {
+            sb.append("Issues found: ").append(issues);
+        }
+        return sb.toString();
     }
 
     private static boolean isSingleplayerHost(ServerCommandSource source) {

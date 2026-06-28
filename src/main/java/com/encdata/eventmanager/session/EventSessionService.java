@@ -19,8 +19,11 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.world.Heightmap;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Collection;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -38,6 +41,12 @@ public class EventSessionService {
     private static Phase currentPhase = Phase.CLOSED;
     private static final Map<UUID, String> participantRoles = new HashMap<>();
     private static final Map<UUID, String> appliedKitRoles = new HashMap<>();
+
+    public record RoleDistributionResult(Map<String, Integer> assignedCounts, int queuedPlayers, int unfilledSlots) {
+        public boolean usedQueueLimits() {
+            return !assignedCounts.isEmpty() || unfilledSlots > 0;
+        }
+    }
 
     public static boolean isActive() { return true; }
     public static Phase getPhase() { return currentPhase; }
@@ -58,12 +67,23 @@ public class EventSessionService {
         return participantRoles.containsKey(uuid) || isAutoEligible(player, data);
     }
 
-    public static void startEvent(Collection<ServerPlayerEntity> players) {
-        currentPhase = Phase.RUNNING;
+    public static RoleDistributionResult startEvent(Collection<ServerPlayerEntity> players) {
         EventSavedData data = EventManagerMod.getInstance().getData();
+        ensureDefaultConfiguration(data);
+        List<ServerPlayerEntity> playerSnapshot = List.copyOf(players);
+
+        for (ServerPlayerEntity player : playerSnapshot) {
+            if (!participantRoles.containsKey(player.getUuid()) && !isBypassed(player, data)) {
+                enrollPlayer(player);
+            }
+        }
+
+        RoleDistributionResult distributionResult = applyQueuedRoleDistribution(playerSnapshot, data);
+
+        currentPhase = Phase.RUNNING;
         appliedKitRoles.clear();
 
-        for (ServerPlayerEntity player : List.copyOf(players)) {
+        for (ServerPlayerEntity player : playerSnapshot) {
             try {
                 evaluatePlayer(player, data);
             } catch (Exception e) {
@@ -72,6 +92,7 @@ public class EventSessionService {
         }
 
         pruneContainmentForCurrentPhase();
+        return distributionResult;
     }
 
     public static void endEvent(Collection<ServerPlayerEntity> players) {
@@ -180,6 +201,27 @@ public class EventSessionService {
         String roleName = participantRoles.get(uuid);
         if (roleName == null) {
             return false;
+        }
+
+        RoleDefinition role = data.roles.get(roleName);
+        return role == null || !role.isBypassEventFlow();
+    }
+
+    public static boolean shouldBeContained(ServerPlayerEntity player, EventSavedData data) {
+        if (player == null || isBypassed(player, data)) {
+            return false;
+        }
+        return shouldBeContained(player.getUuid(), data);
+    }
+
+    public static boolean shouldEvaluateForClosedQueue(ServerPlayerEntity player, EventSavedData data) {
+        if (player == null || currentPhase == Phase.RUNNING || isBypassed(player, data)) {
+            return false;
+        }
+
+        String roleName = participantRoles.get(player.getUuid());
+        if (roleName == null) {
+            return true;
         }
 
         RoleDefinition role = data.roles.get(roleName);
@@ -344,12 +386,69 @@ public class EventSessionService {
             data.defaultRole = DEFAULT_ROLE_NAME;
             changed = true;
         }
+        if (data.roleQueueLimits == null) {
+            data.roleQueueLimits = new LinkedHashMap<>();
+            changed = true;
+        }
 
         for (RoleDefinition definition : data.roles.values()) {
             definition.ensureDefaults();
         }
 
         return changed;
+    }
+
+    private static RoleDistributionResult applyQueuedRoleDistribution(List<ServerPlayerEntity> players, EventSavedData data) {
+        if (data.roleQueueLimits == null || data.roleQueueLimits.isEmpty()) {
+            return new RoleDistributionResult(Map.of(), 0, 0);
+        }
+
+        List<ServerPlayerEntity> queuedPlayers = new ArrayList<>();
+        for (ServerPlayerEntity player : players) {
+            UUID uuid = player.getUuid();
+            if (!isRuntimeParticipant(uuid, data) || isBypassed(player, data)) {
+                continue;
+            }
+            queuedPlayers.add(player);
+        }
+        Collections.shuffle(queuedPlayers);
+
+        Map<String, Integer> assignedCounts = new LinkedHashMap<>();
+        int cursor = 0;
+        int unfilledSlots = 0;
+
+        for (Map.Entry<String, Integer> entry : data.roleQueueLimits.entrySet()) {
+            String roleName = entry.getKey();
+            int limit = entry.getValue() != null ? Math.max(0, entry.getValue()) : 0;
+            RoleDefinition role = data.roles.get(roleName);
+            if (limit <= 0 || role == null) {
+                continue;
+            }
+
+            int assigned = 0;
+            while (assigned < limit && cursor < queuedPlayers.size()) {
+                ServerPlayerEntity player = queuedPlayers.get(cursor++);
+                participantRoles.put(player.getUuid(), roleName);
+                appliedKitRoles.remove(player.getUuid());
+                IdentityService.resetIdentity(player);
+                assigned++;
+            }
+
+            assignedCounts.put(roleName, assigned);
+            unfilledSlots += limit - assigned;
+        }
+
+        for (int i = cursor; i < queuedPlayers.size(); i++) {
+            ServerPlayerEntity player = queuedPlayers.get(i);
+            String roleName = participantRoles.get(player.getUuid());
+            if (roleName == null || "unassigned".equals(roleName) || !data.roles.containsKey(roleName)) {
+                participantRoles.put(player.getUuid(), data.defaultRole);
+                appliedKitRoles.remove(player.getUuid());
+                IdentityService.resetIdentity(player);
+            }
+        }
+
+        return new RoleDistributionResult(assignedCounts, queuedPlayers.size(), unfilledSlots);
     }
 
     public static void handlePlayerRespawn(ServerPlayerEntity player) {
