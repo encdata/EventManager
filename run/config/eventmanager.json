@@ -1,5 +1,7 @@
 {
   "adminAutoJoin": false,
+  "enableLogging": true,
+  "backgroundIdentityRefresh": true,
   "defaultRole": "Default",
   "holdingX": 0.0,
   "holdingY": 100.0,
@@ -22,7 +24,8 @@
         "interactEntities": true,
         "pvpEnabled": true,
         "pickupItems": true,
-        "dropItems": false
+        "dropItems": true,
+        "deathImmunity": true
       },
       "randomizeName": true,
       "randomizeSkin": true,

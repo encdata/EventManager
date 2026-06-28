@@ -30,6 +30,7 @@ public class RoleDefinition {
     private Float spawnYaw;
     private Float spawnPitch;
     private List<KitEntry> kit;
+    private List<RoleSkinEntry> roleSkins;
 
     public RoleDefinition(String name) {
         this.name = name;
@@ -38,6 +39,7 @@ public class RoleDefinition {
         this.randomizeSkin = true;
         this.bypassEventFlow = false;
         this.kit = createDefaultKit();
+        this.roleSkins = new ArrayList<>();
     }
 
     public String getName() { return name; }
@@ -86,6 +88,9 @@ public class RoleDefinition {
         if (kit == null) {
             kit = createDefaultKit();
         }
+        if (roleSkins == null) {
+            roleSkins = new ArrayList<>();
+        }
     }
 
     public List<KitEntry> getKitEntries() {
@@ -95,6 +100,20 @@ public class RoleDefinition {
 
     public void setKitEntries(List<KitEntry> kit) {
         this.kit = kit == null ? createDefaultKit() : new ArrayList<>(kit);
+    }
+
+    public List<RoleSkinEntry> getRoleSkins() {
+        ensureDefaults();
+        return new ArrayList<>(roleSkins);
+    }
+
+    public void setRoleSkins(List<RoleSkinEntry> roleSkins) {
+        this.roleSkins = roleSkins == null ? new ArrayList<>() : new ArrayList<>(roleSkins);
+    }
+
+    public boolean hasRoleSkins() {
+        ensureDefaults();
+        return !roleSkins.isEmpty();
     }
 
     public static List<KitEntry> createDefaultKit() {
@@ -190,6 +209,43 @@ public class RoleDefinition {
 
         public JsonElement stackData() {
             return stackData;
+        }
+    }
+
+    public static final class RoleSkinEntry {
+        private String username;
+        private String skinTextureValue;
+        private String skinSignature;
+
+        private RoleSkinEntry() {
+        }
+
+        private RoleSkinEntry(String username, String skinTextureValue, String skinSignature) {
+            this.username = username;
+            this.skinTextureValue = skinTextureValue;
+            this.skinSignature = skinSignature;
+        }
+
+        public static RoleSkinEntry of(String username, String skinTextureValue, String skinSignature) {
+            return new RoleSkinEntry(username, skinTextureValue, skinSignature);
+        }
+
+        public String username() {
+            return username;
+        }
+
+        public String skinTextureValue() {
+            return skinTextureValue;
+        }
+
+        public String skinSignature() {
+            return skinSignature;
+        }
+
+        public boolean isValid() {
+            return username != null && !username.isBlank()
+                    && skinTextureValue != null && !skinTextureValue.isBlank()
+                    && skinSignature != null && !skinSignature.isBlank();
         }
     }
 

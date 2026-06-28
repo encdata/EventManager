@@ -141,6 +141,13 @@ public final class IdentityPoolService {
         }
     }
 
+    public static SkinDefinition resolveSkinForUsername(String name) {
+        if (!isValidName(name)) {
+            return null;
+        }
+        return resolveSkinFromMinecraftName(name);
+    }
+
     public static Path getIdentityPath() {
         return IDENTITY_DIR;
     }

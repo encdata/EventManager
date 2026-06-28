@@ -20,9 +20,12 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import static net.minecraft.server.command.CommandManager.argument;
@@ -364,6 +367,10 @@ public class EventCommand {
                         sb.append("bypassEventFlow=").append(role.isBypassEventFlow()).append("\n");
                         sb.append("randomizeName=").append(role.isRandomizeName()).append("\n");
                         sb.append("randomizeSkin=").append(role.isRandomizeSkin()).append("\n");
+                        sb.append("customSkinPool=").append(role.getRoleSkins().stream()
+                                .map(RoleDefinition.RoleSkinEntry::username)
+                                .filter(Objects::nonNull)
+                                .toList()).append("\n");
                         sb.append("hasSpawn=").append(role.hasSpawn()).append("\n");
                         if (role.hasSpawn()) {
                             sb.append("spawnDimension=").append(role.getSpawnDimension()).append("\n");
@@ -402,6 +409,15 @@ public class EventCommand {
                         context.getSource().sendFeedback(() -> Text.literal(sb.toString()), true);
                         return 1;
                     }))))
+                    .then(literal("setskins")
+                        .then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS)
+                            .then(argument("usernames", StringArgumentType.greedyString()).executes(context ->
+                                    setRoleSkins(
+                                            context.getSource(),
+                                            StringArgumentType.getString(context, "role"),
+                                            StringArgumentType.getString(context, "usernames")
+                                    )
+                            ))))
                     .then(literal("applykit").then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String roleName = StringArgumentType.getString(context, "role");
                         ServerPlayerEntity player = context.getSource().getPlayer();
@@ -446,6 +462,15 @@ public class EventCommand {
                         ), false);
                         return 1;
                     })))
+                    .then(argument("role", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS)
+                        .then(literal("setskins")
+                            .then(argument("usernames", StringArgumentType.greedyString()).executes(context ->
+                                    setRoleSkins(
+                                            context.getSource(),
+                                            StringArgumentType.getString(context, "role"),
+                                            StringArgumentType.getString(context, "usernames")
+                                    )
+                            ))))
                     .then(literal("configure").then(argument("name", StringArgumentType.word()).suggests(ROLE_SUGGESTIONS).executes(context -> {
                         String name = StringArgumentType.getString(context, "name");
                         RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(name);
@@ -503,6 +528,72 @@ public class EventCommand {
                 )
             );
         });
+    }
+
+    private static int setRoleSkins(ServerCommandSource source, String roleName, String rawInput) {
+        RoleDefinition role = EventManagerMod.getInstance().getData().roles.get(roleName);
+        if (role == null) {
+            source.sendError(Text.literal("Role not found: " + roleName));
+            return 0;
+        }
+
+        List<String> usernames = parseSkinUsernames(rawInput);
+        if (usernames == null) {
+            source.sendError(Text.literal("SetSkins format must be like {} or {name1,name2,name3}."));
+            return 0;
+        }
+
+        List<RoleDefinition.RoleSkinEntry> resolvedSkins = new ArrayList<>();
+        for (String username : usernames) {
+            IdentityPoolService.SkinDefinition skin = IdentityPoolService.resolveSkinForUsername(username);
+            if (skin == null || !skin.isValid()) {
+                source.sendError(Text.literal("Failed to resolve a valid skin for username: " + username));
+                return 0;
+            }
+            resolvedSkins.add(RoleDefinition.RoleSkinEntry.of(username, skin.skinTextureValue(), skin.skinSignature()));
+        }
+
+        role.setRoleSkins(resolvedSkins);
+        reapplyPlayersWithRole(source, roleName);
+        EventManagerMod.getInstance().saveData();
+
+        if (resolvedSkins.isEmpty()) {
+            source.sendFeedback(() -> Text.literal(
+                    "Cleared custom skin pool for role " + roleName + ". {} now uses the default random skin pool."
+            ), true);
+            return 1;
+        }
+
+        source.sendFeedback(() -> Text.literal(
+                "Set custom skin pool for role " + roleName + " to " + usernames + ". Players with that role now randomize skins from this list."
+        ), true);
+        return 1;
+    }
+
+    private static List<String> parseSkinUsernames(String rawInput) {
+        if (rawInput == null) {
+            return null;
+        }
+
+        String trimmed = rawInput.trim();
+        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            return null;
+        }
+
+        String inner = trimmed.substring(1, trimmed.length() - 1).trim();
+        if (inner.isEmpty()) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> usernames = new LinkedHashSet<>();
+        for (String token : inner.split(",")) {
+            String username = token.trim();
+            if (username.isEmpty()) {
+                return null;
+            }
+            usernames.add(username);
+        }
+        return new ArrayList<>(usernames);
     }
 
     private static boolean isSingleplayerHost(ServerCommandSource source) {

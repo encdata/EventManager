@@ -82,7 +82,7 @@ public final class IdentityService {
             return;
         }
 
-        SessionIdentity identity = assignedIdentities.computeIfAbsent(uuid, ignored -> selectIdentity(uuid));
+        SessionIdentity identity = assignedIdentities.computeIfAbsent(uuid, ignored -> selectIdentity(uuid, role));
         if (identity == null) {
             clearIdentity(player);
             player.sendMessage(Text.literal("Warning: No valid names/skins are available in config/eventmanager/identities/."));
@@ -139,7 +139,7 @@ public final class IdentityService {
         }
 
         if (rerollSkin) {
-            IdentityPoolService.SkinDefinition nextSkin = selectSkin(uuid, currentIdentity.skinTextureValue(), currentIdentity.skinSignature());
+            IdentityPoolService.SkinDefinition nextSkin = selectSkin(uuid, currentIdentity.skinTextureValue(), currentIdentity.skinSignature(), role);
             if (nextSkin == null) {
                 return false;
             }
@@ -187,9 +187,9 @@ public final class IdentityService {
         return player.getName().getString();
     }
 
-    private static SessionIdentity selectIdentity(UUID playerUuid) {
+    private static SessionIdentity selectIdentity(UUID playerUuid, RoleDefinition role) {
         String chosenName = selectName(playerUuid, null);
-        IdentityPoolService.SkinDefinition chosenSkin = selectSkin(playerUuid, null, null);
+        IdentityPoolService.SkinDefinition chosenSkin = selectSkin(playerUuid, null, null, role);
         if (chosenName == null || chosenSkin == null) {
             EventManagerMod.logWarn(
                     "Identity randomization requested for {} but the identity pool is incomplete: names={}, skins={}",
@@ -225,8 +225,8 @@ public final class IdentityService {
         return candidateNames.get(RANDOM.nextInt(candidateNames.size()));
     }
 
-    private static IdentityPoolService.SkinDefinition selectSkin(UUID playerUuid, String currentSkinValue, String currentSkinSignature) {
-        List<IdentityPoolService.SkinDefinition> skins = IdentityPoolService.getSkins();
+    private static IdentityPoolService.SkinDefinition selectSkin(UUID playerUuid, String currentSkinValue, String currentSkinSignature, RoleDefinition role) {
+        List<IdentityPoolService.SkinDefinition> skins = getAvailableSkins(role);
         if (skins.isEmpty()) {
             return null;
         }
@@ -252,6 +252,19 @@ public final class IdentityService {
                     : skins.get(RANDOM.nextInt(skins.size()));
         }
         return candidateSkins.get(RANDOM.nextInt(candidateSkins.size()));
+    }
+
+    private static List<IdentityPoolService.SkinDefinition> getAvailableSkins(RoleDefinition role) {
+        if (role != null && role.hasRoleSkins()) {
+            List<IdentityPoolService.SkinDefinition> roleSkins = role.getRoleSkins().stream()
+                    .filter(RoleDefinition.RoleSkinEntry::isValid)
+                    .map(entry -> new IdentityPoolService.SkinDefinition(entry.skinTextureValue(), entry.skinSignature()))
+                    .toList();
+            if (!roleSkins.isEmpty()) {
+                return roleSkins;
+            }
+        }
+        return IdentityPoolService.getSkins();
     }
 
     private static void restoreNameOnly(ServerPlayerEntity player) {

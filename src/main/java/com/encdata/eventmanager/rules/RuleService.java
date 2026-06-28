@@ -3,7 +3,6 @@ package com.encdata.eventmanager.rules;
 import com.encdata.eventmanager.queue.HoldingService;
 import com.encdata.eventmanager.role.RoleDefinition;
 import com.encdata.eventmanager.session.EventSessionService;
-import net.fabricmc.fabric.api.entity.event.v1.ServerPlayerEvents;
 import net.fabricmc.fabric.api.event.player.*;
 import net.minecraft.command.DefaultPermissions;
 import net.minecraft.block.entity.BlockEntity;
@@ -73,15 +72,6 @@ public class RuleService {
             return ActionResult.PASS;
         });
 
-        ServerPlayerEvents.ALLOW_DEATH.register((player, damageSource, damageAmount) -> {
-            if (!hasDeathImmunity(player) || hasTotemInHand(player)) {
-                return true;
-            }
-
-            // Keep the player barely alive instead of letting vanilla finish the death flow.
-            player.setHealth(1.0F);
-            return false;
-        });
     }
 
     public static boolean shouldCancel(PlayerEntity player, String ruleName, BlockPos pos) {
@@ -123,7 +113,7 @@ public class RuleService {
         return role != null && role.getRules().deathImmunity();
     }
 
-    private static boolean hasTotemInHand(ServerPlayerEntity player) {
+    public static boolean hasTotemInHand(ServerPlayerEntity player) {
         return player.getMainHandStack().isOf(Items.TOTEM_OF_UNDYING)
                 || player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING);
     }
