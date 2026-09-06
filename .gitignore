@@ -31,7 +31,6 @@ coverage/
 tmp/
 temp/
 run/
-.gradle/
 
 # Dependency dirs
 node_modules/

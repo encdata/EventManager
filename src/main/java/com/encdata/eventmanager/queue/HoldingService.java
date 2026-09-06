@@ -9,7 +9,6 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
-import net.minecraft.util.math.Vec3d;
 
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -42,7 +41,6 @@ public class HoldingService {
     public static void init() {
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             EventSavedData data = EventManagerMod.getInstance().getData();
-            Vec3d holdingPos = new Vec3d(data.holdingX, data.holdingY, data.holdingZ);
             boolean refreshQueueDisplay = data.showQueuePosition && ++queueDisplayTicks >= 100;
             if (refreshQueueDisplay) {
                 queueDisplayTicks = 0;
@@ -63,12 +61,6 @@ public class HoldingService {
                     if (!player.getEntityWorld().getRegistryKey().getValue().equals(data.holdingDimension)) {
                         teleportToHolding(player, data);
                         continue;
-                    }
-
-                    // Check distance
-                    if (player.squaredDistanceTo(holdingPos) > 1.0) { // 1 block tolerance
-                        player.requestTeleport(holdingPos.x, holdingPos.y, holdingPos.z);
-                        player.setVelocity(0, 0, 0);
                     }
 
                     if (refreshQueueDisplay) {

@@ -15,7 +15,9 @@ import net.minecraft.registry.Registries;
 import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class RoleDefinition {
     private final String name;
@@ -107,13 +109,46 @@ public class RoleDefinition {
         return new ArrayList<>(roleSkins);
     }
 
-    public void setRoleSkins(List<RoleSkinEntry> roleSkins) {
-        this.roleSkins = roleSkins == null ? new ArrayList<>() : new ArrayList<>(roleSkins);
+    public void setRoleSkins(List<RoleSkinEntry> skins) {
+        this.roleSkins = new ArrayList<>();
+        if (skins != null) {
+            for (RoleSkinEntry skin : skins) {
+                if (skin != null && skin.isValid()) {
+                    this.roleSkins.add(skin);
+                }
+            }
+        }
     }
 
-    public boolean hasRoleSkins() {
+    public List<String> validate() {
         ensureDefaults();
-        return !roleSkins.isEmpty();
+        List<String> errors = new ArrayList<>();
+        if (name == null || name.isBlank() || name.length() > 32) {
+            errors.add("role name must be 1-32 characters");
+        }
+        if (rules == null) {
+            errors.add("rules are missing");
+        }
+        Set<Integer> usedSlots = new HashSet<>();
+        for (KitEntry entry : kit) {
+            if (entry == null || entry.slot < 0 || entry.slot >= 41) {
+                errors.add("kit contains an invalid slot");
+            } else if (!usedSlots.add(entry.slot)) {
+                errors.add("kit contains duplicate slot " + entry.slot);
+            }
+            if (entry != null && (entry.itemId == null || entry.itemId.isBlank()) && (entry.stackNbt == null || entry.stackNbt.isBlank()) && entry.stackData == null) {
+                errors.add("kit contains an empty item entry");
+            }
+        }
+        if (hasSpawn() && (spawnDimension == null || !Double.isFinite(spawnX) || !Double.isFinite(spawnY) || !Double.isFinite(spawnZ))) {
+            errors.add("spawn coordinates or dimension are invalid");
+        }
+        for (RoleSkinEntry skin : roleSkins) {
+            if (skin == null || !skin.isValid()) {
+                errors.add("custom skin pool contains an invalid entry");
+            }
+        }
+        return errors;
     }
 
     public static List<KitEntry> createDefaultKit() {
@@ -195,6 +230,10 @@ public class RoleDefinition {
             );
         }
 
+        public static KitEntry of(int slot, String itemId, int count) {
+            return new KitEntry(slot, itemId, count, null, null);
+        }
+
         public int slot() {
             return slot;
         }
@@ -230,17 +269,9 @@ public class RoleDefinition {
             return new RoleSkinEntry(username, skinTextureValue, skinSignature);
         }
 
-        public String username() {
-            return username;
-        }
-
-        public String skinTextureValue() {
-            return skinTextureValue;
-        }
-
-        public String skinSignature() {
-            return skinSignature;
-        }
+        public String username() { return username; }
+        public String skinTextureValue() { return skinTextureValue; }
+        public String skinSignature() { return skinSignature; }
 
         public boolean isValid() {
             return username != null && !username.isBlank()

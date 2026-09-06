@@ -45,6 +45,8 @@ public class EventManagerMod implements ModInitializer {
             }
         });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            EventSessionService.persistRuntimeStateForShutdown();
+            saveData();
             IdentityPoolService.stopBackgroundRefresh();
             if (serverInstance == server) {
                 serverInstance = null;
@@ -85,12 +87,17 @@ public class EventManagerMod implements ModInitializer {
                 || Identifier.of(MOD_ID, "void_prison_empty").equals(reloaded.holdingDimension)) {
             reloaded.holdingDimension = VOID_PRISON_DIMENSION;
             reloaded.holdingX = 0.0;
-            reloaded.holdingY = 100.0;
+            reloaded.holdingY = 1.0;
             reloaded.holdingZ = 0.0;
+            changed = true;
+        } else if (VOID_PRISON_DIMENSION.equals(reloaded.holdingDimension) && reloaded.holdingY == 100.0) {
+            // Migrate the old default from the air pocket to the new barrier platform.
+            reloaded.holdingY = 1.0;
             changed = true;
         }
 
         this.data = reloaded;
+        EventSessionService.restoreRuntimeState(reloaded);
         loggingEnabled = this.data.enableLogging;
         IdentityService.reloadPool();
         if (serverInstance != null) {

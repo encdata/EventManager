@@ -21,6 +21,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public final class RoleKitGui {
     private static final int ROWS = 6;
@@ -32,6 +33,7 @@ public final class RoleKitGui {
     }
 
     public static void open(ServerPlayerEntity player, RoleDefinition role) {
+        UUID ownerId = player.getUuid();
         SimpleInventory inventory = new SimpleInventory(SIZE);
         loadKit(inventory, role);
         fillLockedSlots(inventory);
@@ -48,7 +50,9 @@ public final class RoleKitGui {
                 return new GenericContainerScreenHandler(ScreenHandlerType.GENERIC_9X6, syncId, playerInventory, inventory, ROWS) {
                     @Override
                     public boolean canUse(PlayerEntity player) {
-                        return true;
+                        return player instanceof ServerPlayerEntity serverPlayer
+                                && serverPlayer.isAlive()
+                                && ownerId.equals(serverPlayer.getUuid());
                     }
 
                     @Override
@@ -83,11 +87,14 @@ public final class RoleKitGui {
 
                     @Override
                     public void onSlotClick(int slotIndex, int button, SlotActionType actionType, PlayerEntity player) {
+                        if (!(player instanceof ServerPlayerEntity serverPlayer) || !ownerId.equals(serverPlayer.getUuid())) {
+                            return;
+                        }
                         if (slotIndex >= 0 && slotIndex < SIZE && slotIndex >= EDITABLE_SLOT_COUNT) {
                             if (slotIndex == BACK_SLOT && actionType == SlotActionType.PICKUP) {
                                 saveKit(inventory, role);
                                 EventManagerMod.getInstance().saveData();
-                                RoleConfigGui.open((ServerPlayerEntity) player, role);
+                                RoleConfigGui.open(serverPlayer, role);
                             }
                             return;
                         }

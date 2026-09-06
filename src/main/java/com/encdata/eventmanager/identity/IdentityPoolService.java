@@ -4,6 +4,7 @@ import com.encdata.eventmanager.EventManagerMod;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import net.fabricmc.loader.api.FabricLoader;
 import okhttp3.HttpUrl;
@@ -20,6 +21,8 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -127,6 +130,14 @@ public final class IdentityPoolService {
         }
     }
 
+    /** Resolves a Minecraft username to signed skin data for role-specific pools. */
+    public static SkinDefinition resolveSkinForUsername(String username) {
+        if (!isValidName(username)) {
+            return null;
+        }
+        return resolveSkinFromMinecraftName(username);
+    }
+
     public static List<IdentityDefinition> getIdentities() {
         synchronized (LOCK) {
             List<String> names = new ArrayList<>(knownNames);
@@ -139,13 +150,6 @@ public final class IdentityPoolService {
             }
             return identities;
         }
-    }
-
-    public static SkinDefinition resolveSkinForUsername(String name) {
-        if (!isValidName(name)) {
-            return null;
-        }
-        return resolveSkinFromMinecraftName(name);
     }
 
     public static Path getIdentityPath() {
@@ -508,6 +512,9 @@ public final class IdentityPoolService {
         } catch (IOException e) {
             EventManagerMod.logError("Failed to read names from {}", NAME_PATH, e);
             return new NamePoolFile();
+        } catch (JsonParseException e) {
+            quarantineCorruptFile(NAME_PATH, "names");
+            return new NamePoolFile();
         }
     }
 
@@ -517,6 +524,9 @@ public final class IdentityPoolService {
             return file != null ? file : new SkinPoolFile();
         } catch (IOException e) {
             EventManagerMod.logError("Failed to read skins from {}", SKIN_PATH, e);
+            return new SkinPoolFile();
+        } catch (JsonParseException e) {
+            quarantineCorruptFile(SKIN_PATH, "skins");
             return new SkinPoolFile();
         }
     }
@@ -531,6 +541,31 @@ public final class IdentityPoolService {
         } catch (IOException e) {
             EventManagerMod.logError("Failed to read NameMC request config from {}", REQUEST_PATH, e);
             return NameMcRequestConfig.template();
+        } catch (JsonParseException e) {
+            quarantineCorruptFile(REQUEST_PATH, "NameMC request config");
+            NameMcRequestConfig template = NameMcRequestConfig.template();
+            writeRequestFile(template);
+            return template;
+        }
+    }
+
+    private static void quarantineCorruptFile(Path path, String description) {
+        Path backup = path.resolveSibling(path.getFileName() + ".corrupt-" + Instant.now().toEpochMilli());
+        boolean quarantined = false;
+        try {
+            Files.move(path, backup, StandardCopyOption.REPLACE_EXISTING);
+            quarantined = true;
+            EventManagerMod.logWarn("Ignoring corrupt {} file {}. A backup was saved to {}", description, path, backup);
+        } catch (IOException moveException) {
+            EventManagerMod.logError("Failed to quarantine corrupt {} file {}", description, path, moveException);
+        }
+
+        if (quarantined && path.equals(NAME_PATH)) {
+            writeNamesFile(new NamePoolFile());
+        } else if (quarantined && path.equals(SKIN_PATH)) {
+            SkinPoolFile defaults = new SkinPoolFile();
+            defaults.skins.add(new SkinDefinition("base64-texture-value-here", "texture-signature-here"));
+            writeSkinsFile(defaults);
         }
     }
 

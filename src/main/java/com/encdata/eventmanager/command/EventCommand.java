@@ -408,6 +408,14 @@ public class EventCommand {
                 .then(literal("roles")
                     .then(literal("create").then(argument("name", StringArgumentType.word()).executes(context -> {
                         String name = StringArgumentType.getString(context, "name");
+                        if (name.isBlank() || name.length() > 32) {
+                            context.getSource().sendError(Text.literal("Role names must be 1-32 characters."));
+                            return 0;
+                        }
+                        if (EventManagerMod.getInstance().getData().roles.containsKey(name)) {
+                            context.getSource().sendError(Text.literal("Role already exists: " + name));
+                            return 0;
+                        }
                         EventManagerMod.getInstance().getData().roles.put(name, new RoleDefinition(name));
                         EventManagerMod.getInstance().saveData();
                         context.getSource().sendFeedback(() -> Text.literal("Created role: " + name), true);
@@ -745,6 +753,10 @@ public class EventCommand {
                 issues++;
                 sb.append("- Role ").append(entry.getKey()).append(" has no spawn. Use /event roles setspawn ")
                         .append(entry.getKey()).append("\n");
+            }
+            for (String roleIssue : role.validate()) {
+                issues++;
+                sb.append("- Role ").append(entry.getKey()).append(": ").append(roleIssue).append("\n");
             }
         }
 

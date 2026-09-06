@@ -51,6 +51,30 @@ public class EventSessionService {
     public static boolean isActive() { return true; }
     public static Phase getPhase() { return currentPhase; }
 
+    public static void restoreRuntimeState(EventSavedData data) {
+        participantRoles.clear();
+        if (data.participantRoles != null) {
+            participantRoles.putAll(data.participantRoles);
+        }
+        try {
+            currentPhase = Phase.valueOf(data.phase == null ? "CLOSED" : data.phase);
+        } catch (IllegalArgumentException e) {
+            currentPhase = Phase.CLOSED;
+            data.phase = currentPhase.name();
+        }
+    }
+
+    private static void persistRuntimeState(EventSavedData data) {
+        data.participantRoles = new HashMap<>(participantRoles);
+        data.phase = currentPhase.name();
+    }
+
+    public static void persistRuntimeStateForShutdown() {
+        if (EventManagerMod.getInstance() != null && EventManagerMod.getInstance().getData() != null) {
+            persistRuntimeState(EventManagerMod.getInstance().getData());
+        }
+    }
+
     public static Map<UUID, String> getParticipantRolesSnapshot() {
         return new HashMap<>(participantRoles);
     }
@@ -82,6 +106,7 @@ public class EventSessionService {
 
         currentPhase = Phase.RUNNING;
         appliedKitRoles.clear();
+        persistRuntimeState(data);
 
         for (ServerPlayerEntity player : playerSnapshot) {
             try {
@@ -114,6 +139,7 @@ public class EventSessionService {
         currentPhase = Phase.CLOSED;
 
         EventSavedData data = EventManagerMod.getInstance().getData();
+        persistRuntimeState(data);
         for (ServerPlayerEntity player : playerSnapshot) {
             try {
                 evaluatePlayer(player, data);
@@ -137,6 +163,9 @@ public class EventSessionService {
         }
 
         if (!participantRoles.containsKey(uuid)) {
+            if (!isEligible(player, data)) {
+                return;
+            }
             enrollPlayer(player);
             return;
         }
@@ -161,6 +190,7 @@ public class EventSessionService {
         if (role != null) {
             role.ensureDefaults();
             participantRoles.put(player.getUuid(), roleName);
+            persistRuntimeState(data);
             appliedKitRoles.remove(player.getUuid());
             IdentityService.resetIdentity(player);
             applyPlayerState(player, data, true);
@@ -171,6 +201,7 @@ public class EventSessionService {
         EventSavedData data = EventManagerMod.getInstance().getData();
         ensureDefaultConfiguration(data);
         participantRoles.put(player.getUuid(), "unassigned");
+        persistRuntimeState(data);
         appliedKitRoles.remove(player.getUuid());
         IdentityService.resetIdentity(player);
         applyPlayerState(player, data, true);
@@ -472,6 +503,12 @@ public class EventSessionService {
 
     public static void reconcilePlayerInHolding(ServerPlayerEntity player, EventSavedData data) {
         UUID uuid = player.getUuid();
+
+        // Operators can use the holding dimension as a staging/build area without
+        // being enrolled, stripped of inventory, or returned to the overworld.
+        if (hasPrivilegedBypass(player) && !participantRoles.containsKey(uuid)) {
+            return;
+        }
 
         if (isBypassed(player, data)) {
             HoldingService.removePlayer(player);

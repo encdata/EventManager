@@ -17,8 +17,11 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.UUID;
+
 public class RoleConfigGui {
     public static void open(ServerPlayerEntity player, RoleDefinition role) {
+        UUID ownerId = player.getUuid();
         SimpleInventory inventory = new SimpleInventory(27);
         updateInventory(inventory, role);
 
@@ -44,14 +47,19 @@ public class RoleConfigGui {
 
                     @Override
                     public boolean canUse(PlayerEntity player) {
-                        return true;
+                        return player instanceof ServerPlayerEntity serverPlayer
+                                && serverPlayer.isAlive()
+                                && ownerId.equals(serverPlayer.getUuid());
                     }
 
                     @Override
                     public void onSlotClick(int slotIndex, int button, net.minecraft.screen.slot.SlotActionType actionType, PlayerEntity player) {
+                        if (!(player instanceof ServerPlayerEntity serverPlayer) || !ownerId.equals(serverPlayer.getUuid())) {
+                            return;
+                        }
                         if (slotIndex >= 0 && slotIndex < 27) {
                             if (actionType == net.minecraft.screen.slot.SlotActionType.PICKUP || actionType == net.minecraft.screen.slot.SlotActionType.QUICK_MOVE) {
-                                if (handleSlotClick((ServerPlayerEntity) player, slotIndex, role)) {
+                                if (handleSlotClick(serverPlayer, slotIndex, role)) {
                                     return;
                                 }
                                 updateInventory(inventory, role);
